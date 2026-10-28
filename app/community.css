@@ -90,3 +90,11 @@ html,body{background-color:#eaf2ff}
 .p-app:has(>.p-bottom-nav){padding-bottom:calc(70px + var(--patrac-bottom-safe))}
 .p-bottom-nav{height:calc(70px + var(--patrac-bottom-safe));padding:6px max(8px,calc((100vw - 700px)/2)) calc(6px + var(--patrac-bottom-safe));grid-template-rows:58px;align-content:start}
 .p-bottom-nav button{min-height:54px}
+/* Anchor the map and its menu to one installed-app viewport, not WebKit's
+   independently positioned fixed-footer viewport after resume. */
+@media(display-mode:standalone),(display-mode:fullscreen){
+ .p-app.p-view-home{position:fixed;inset:0 0 auto;height:100lvh;max-height:100lvh;min-height:0}
+ .p-app.p-view-home>.p-bottom-nav{position:absolute;bottom:0}
+}
+html[data-patrac-home-locked] .p-app.p-view-home{position:fixed;inset:0 0 auto;height:100lvh;max-height:100lvh;min-height:0}
+html[data-patrac-home-locked] .p-app.p-view-home>.p-bottom-nav{position:absolute;bottom:0}
