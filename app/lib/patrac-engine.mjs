@@ -6,6 +6,7 @@ function text(value, max, name) {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max) throw new GameError(`Doplňte ${name} (nejvýše ${max} znaků).`);
   return value.trim();
 }
+export const PENALTY_OPTIONS = [5, 10, 15, 20, 25, 30];
 export function validateExpedition(input) {
   const name = text(input.name, 100, 'název výpravy');
   if (!['race', 'treasure'].includes(input.mode)) throw new GameError('Vyberte režim výpravy.');
@@ -20,13 +21,15 @@ export function validateExpedition(input) {
       if (!['text', 'photo'].includes(h.type)) throw new GameError('Neplatný typ nápovědy.');
       if (h.type === 'text' && h.content.length > 3000) throw new GameError('Textová nápověda je příliš dlouhá.');
       if (h.type === 'photo' && (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(h.content) || h.content.length > 250000)) throw new GameError('Fotografii nápovědy zmenšete pod 180 kB.');
-      const minutes = Number(h.minutes ?? 2);
+      const minutes = Number(h.minutes ?? 10);
       if (!Number.isInteger(minutes) || minutes < 0 || minutes > 60) throw new GameError('Penalizace musí být 0 až 60 minut.');
       return { id: `h${hi}`, type: h.type, content: h.content, minutes, ...(h.type === 'photo' ? { photoVersion: h.photoVersion === 2 ? 2 : 0, ...(typeof h.photoKey === 'string' ? { photoKey: h.photoKey } : {}) } : {}) };
     }) : [];
+    const solutionMinutes = Number(s.solutionMinutes ?? 30);
+    if (!PENALTY_OPTIONS.includes(solutionMinutes)) throw new GameError('Penalizace za řešení musí být 5, 10, 15, 20, 25 nebo 30 minut.');
     if (hints.length > 5) throw new GameError('Ke stanovišti lze přidat nejvýše pět nápověd.');
     return { id: `s${index}`, name: text(s.name, 100, `název stanoviště ${index + 1}`), ...coords, radius,
-      question: text(s.question, 5000, `hádanku u stanoviště ${index + 1}`), answers, answer: s.answer.trim(), hints };
+      question: text(s.question, 5000, `hádanku u stanoviště ${index + 1}`), answers, answer: s.answer.trim(), solutionMinutes, hints };
   });
   return { name, mode: input.mode, stations };
 }
@@ -56,6 +59,14 @@ export function applyAction(game, team, action, now) {
       next.penaltyMs += hint.minutes * 60000;
       next.events.push({ type: 'hint', index: next.index, hintId: hint.id, hintType: hint.type, penaltyMs: hint.minutes * 60000, at: now });
     }
+  } else if (action.action === 'solution') {
+    if (!next.arrivedAt) throw new GameError('Řešení se odemkne až na stanovišti.', 403);
+    if (game.mode !== 'race') throw new GameError('V honu za pokladem jsou řešení vypnutá.', 403);
+    if (!next.events.some(e => e.type === 'solution' && e.index === next.index)) {
+      const penaltyMs = (station.solutionMinutes ?? 30) * 60000;
+      next.penaltyMs += penaltyMs;
+      next.events.push({ type: 'solution', index: next.index, penaltyMs, at: now });
+    }
   } else if (action.action === 'answer') {
     if (!next.arrivedAt) throw new GameError('Hádanka se odemkne až po příchodu.', 403);
     if (next.lastWrongAt && now - next.lastWrongAt < 5000) throw new GameError('Před dalším pokusem počkejte 5 sekund.', 429);
@@ -74,7 +85,7 @@ export function teamProjection(game, team, now) {
   const station = game.status === 'running' && !team.finishedAt ? game.stations[team.index] : null;
   return { ...team, ...score(game, team, now), station: station ? {
     id: station.id, name: station.name, lat: station.lat, lng: station.lng, radius: station.radius,
-    ...(team.arrivedAt ? { question: station.question, hints: game.mode === 'race' ? station.hints.map(h => ({
+    ...(team.arrivedAt ? { question: station.question, ...(game.mode === 'race' ? { solutionMinutes: station.solutionMinutes ?? 30, ...(team.events.some(e => e.type === 'solution' && e.index === team.index) ? { solution: station.answer.split('\n').find(v => v.trim()).trim() } : {}) } : {}), hints: game.mode === 'race' ? station.hints.map(h => ({
       id: h.id, type: h.type, minutes: h.minutes,
       ...(team.events.some(e => e.type === 'hint' && e.index === team.index && e.hintId === h.id) ? { content: h.content } : {}),
     })) : [] } : {}),
@@ -86,6 +97,6 @@ export function stationTimings(game, team) {
     const previous = index === 0 ? (team.startedAt ?? game.startedAt) : team.events.find(e => e.type === 'solve' && e.index === index - 1)?.at;
     return { index, name: station.name, arrivedAt: arrive?.at, solvedAt: solve?.at,
       travelMs: arrive && previous ? arrive.at - previous : null, solveMs: solve && arrive ? solve.at - arrive.at : null,
-      hints: team.events.filter(e => e.type === 'hint' && e.index === index) };
+      hints: team.events.filter(e => e.type === 'hint' && e.index === index), solutions: team.events.filter(e => e.type === 'solution' && e.index === index) };
   });
 }

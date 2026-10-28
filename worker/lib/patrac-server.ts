@@ -123,7 +123,7 @@ export async function changeExpedition(request: Request, code: string) {
     return json(await removeExpedition(db(),env.BUCKET,{code,userId:account!.id,version:input.version,confirmation:input.confirmation}));
   }
   if (game.status === 'deleting') throw new GameError('Výprava se právě maže.',410);
-  if (game.visibility==='public'&&['join','arrive','hint','answer'].includes(input.action))throw new GameError('Veřejnou výpravu zahajte přihlášeným účtem z mapy.',403);
+  if (game.visibility==='public'&&['join','arrive','hint','answer','solution'].includes(input.action))throw new GameError('Veřejnou výpravu zahajte přihlášeným účtem z mapy.',403);
   if (input.action === 'join') {
     const account=await creatorIdentity(request,true);
     if(await db().prepare('SELECT code FROM patrac_creator_games WHERE code=? AND creator_id=?').bind(code,account!.id).first())return json({ok:true,role:'owner'});

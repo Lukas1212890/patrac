@@ -25,3 +25,30 @@ test('late teams use their own start and finish times while the published route 
  assert.equal(score(g,{...t,finishedAt:at+120000},at+500000).elapsedMs,20000);
  assert.equal(g.status,'running');
 });
+
+test('solution is arrival-gated, charged once, cumulatively scored and logged without advancing',()=>{
+ const g=game();g.stations[0].solutionMinutes=15;
+ let t=newTeam('a','Hráč',at);
+ assert.equal(teamProjection(g,t,at).station.solution,undefined);
+ assert.throws(()=>applyAction(g,t,{action:'solution',index:0},at+1));
+ t=applyAction(g,t,{action:'arrive',index:0,position:position(at+1000)},at+1000);
+ assert.equal(teamProjection(g,t,at).station.solution,undefined);
+ assert.throws(()=>applyAction({...g,mode:'treasure'},t,{action:'solution',index:0},at+2000));
+ t=applyAction(g,t,{action:'hint',index:0,hintId:'h0'},at+2000);
+ t=applyAction(g,t,{action:'solution',index:0,minutes:0},at+3000);
+ t=applyAction(g,t,{action:'solution',index:0},at+4000);
+ assert.equal(t.penaltyMs,17*60000);assert.equal(t.index,0);
+ assert.equal(teamProjection(g,t,at).station.solution,'stín');
+ assert.equal(stationTimings(g,t)[0].solutions.length,1);
+ assert.equal(score(g,t,at+4000).totalMs,17*60000+4000);
+ t=applyAction(g,t,{action:'answer',index:0,answer:'stín'},at+5000);
+ assert.equal(teamProjection(g,t,at).station.solution,undefined);
+ assert.throws(()=>applyAction(g,t,{action:'solution',index:0},at+6000));
+});
+test('solution penalty accepts all six choices and defaults old stations to thirty minutes',()=>{
+ for(const m of [5,10,15,20,25,30])assert.equal(validateExpedition({name:'Test',mode:'race',stations:[{...station,solutionMinutes:m}]}).stations[0].solutionMinutes,m);
+ for(const m of [-1,0,2,31,Infinity,'bad'])assert.throws(()=>validateExpedition({name:'Test',mode:'race',stations:[{...station,solutionMinutes:m}]}));
+ const g=game();delete g.stations[0].solutionMinutes;
+ const t=applyAction(g,newTeam('a','Hráč',at),{action:'arrive',index:0,position:position(at+1000)},at+1000);
+ assert.equal(applyAction(g,t,{action:'solution',index:0},at+2000).penaltyMs,30*60000);
+});

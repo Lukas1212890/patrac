@@ -66,7 +66,7 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
  async function play(code,user,input){await ready();await paid(user);const row=await ownAttempt(code,user.id);if(!row)throw new GameError('Tuto výpravu nejprve zahajte z mapy.',404);
   const game=JSON.parse(row.game_payload);if(game.visibility!=='public'||game.status!=='running')throw new GameError('Výprava už není dostupná.',410);
   if(input){
-   if(!['arrive','answer','hint'].includes(input.action))throw new GameError('Neplatná herní akce.');
+   if(!['arrive','answer','hint','solution'].includes(input.action))throw new GameError('Neplatná herní akce.');
    for(let i=0;i<5;i++){
     const current=i===0?row:await db.prepare('SELECT * FROM patrac_teams WHERE id=?').bind(row.id).first();if(!current)throw new GameError('Výprava byla odstraněna.',410);
     const next=applyAction(game,JSON.parse(current.payload),input,now()),wrong=next.wrongAnswer;delete next.wrongAnswer;
