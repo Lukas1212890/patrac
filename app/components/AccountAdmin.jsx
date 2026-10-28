@@ -1,0 +1,69 @@
+'use client';
+import { useEffect, useRef, useState } from 'react';
+import { ShieldCheck, Search, ArrowLeft, ChevronLeft, ChevronRight, LogOut, Mail, KeyRound, UsersRound, CheckCircle2, X } from 'lucide-react';
+import { creatorClient, creatorAccessToken, clearAccount } from '../lib/creator-client';
+import { apiUrl } from '../lib/apiUrl.mjs';
+import '../admin/admin.css';
+async function api(path, data, signal) {
+  const token = await creatorAccessToken();
+  const response = await fetch(apiUrl('/api/admin' + path), { method: data ? 'POST' : 'GET', cache: 'no-store', signal,
+    headers: { ...(token ? {'X-Patrac-Account':token}:{}), ...(data ? {'Content-Type':'application/json'}:{}) }, ...(data ? {body:JSON.stringify(data)}:{}) });
+  const result = await response.json();
+  if (!response.ok) throw Object.assign(Error(result.error || 'Požadavek se nepodařilo dokončit.'), {code:result.code,status:response.status});
+  return result;
+}
+const date = value => { const d = new Date(value); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('cs-CZ',{dateStyle:'medium',timeStyle:'short'}); };
+const actionName = {update:'Úprava účtu',reset:'Obnova hesla',verify:'Ověření e-mailu',revoke:'Odhlášení zařízení'};
+const statusName = {pending:'Zahájeno',success:'Dokončeno',failed:'Nedokončeno',saved_mail_failed:'Uloženo, e-mail nedoručen'};
+function auditDetails(value){try{const d=JSON.parse(value);return [d.oldName!==d.name&&d.name?'Přezdívka: '+d.oldName+' → '+d.name:'',d.email?'E-mail: '+d.oldEmail+' → '+d.email:''].filter(Boolean).join(' · ');}catch{return '';}}
+export default function AccountAdmin() {
+  const [mode,setMode]=useState('loading'),[admin,setAdmin]=useState(null),[email,setEmail]=useState(''),[password,setPassword]=useState('');
+  const [query,setQuery]=useState(''),[page,setPage]=useState(0),[list,setList]=useState(null),[selected,setSelected]=useState(null),[detail,setDetail]=useState(null);
+  const [name,setName]=useState(''),[editEmail,setEditEmail]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState(''),[warning,setWarning]=useState(false),[busy,setBusy]=useState(false),[loadingList,setLoadingList]=useState(false),[reload,setReload]=useState(0),[pending,setPending]=useState(null);
+  const mounted=useRef(true),modal=useRef(null),returnFocus=useRef(null);
+  useEffect(()=>{mounted.current=true;api('/session').then(result=>{if(mounted.current){setAdmin(result.user);setMode('ready');}}).catch(e=>{if(mounted.current){setMode(e.status===401?'login':e.status===403?'forbidden':'unavailable');setError(e.status===401?'':e.message);}});return()=>{mounted.current=false;};},[]);
+  useEffect(()=>{
+    if(mode!=='ready')return;
+    const controller=new AbortController();setLoadingList(true);
+    const timer=setTimeout(()=>api('/users?q='+encodeURIComponent(query)+'&page='+page,undefined,controller.signal).then(result=>{if(!controller.signal.aborted)setList(result);}).catch(e=>{if(e.name!=='AbortError')setError(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoadingList(false);}),250);
+    return()=>{clearTimeout(timer);controller.abort();};
+  },[mode,query,page,reload]);
+  useEffect(()=>{
+    if(!selected||mode!=='ready'){setDetail(null);return;}
+    const controller=new AbortController();setDetail(null);
+    api('/users/'+encodeURIComponent(selected),undefined,controller.signal).then(result=>{if(!controller.signal.aborted){setDetail(result);setName(result.user.name);setEditEmail(result.user.email);}}).catch(e=>{if(e.name!=='AbortError')setError(e.message);});
+    return()=>controller.abort();
+  },[selected,reload,mode]);
+  useEffect(()=>{if(!pending)return;const escape=e=>{if(e.key==='Escape'&&!busy){setPending(null);setPassword('');}};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape);},[pending,busy]);
+  useEffect(()=>{if(!pending)return;const previous=returnFocus.current,overflow=document.body.style.overflow;document.body.style.overflow='hidden';const trap=e=>{if(e.key!=='Tab')return;const all=modal.current?.querySelectorAll('button:not(:disabled),input:not(:disabled)');if(!all?.length)return;const first=all[0],last=all[all.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}};window.addEventListener('keydown',trap);return()=>{window.removeEventListener('keydown',trap);document.body.style.overflow=overflow;previous?.focus?.();};},[pending]);
+  async function login(event, reauth=false){
+    event.preventDefault();setBusy(true);setError('');
+    try{
+      const {client}=await creatorClient();
+      const result=await client.signIn.email({email:(reauth?admin.email:email).trim().toLowerCase(),password});
+      setPassword('');if(result.error)throw Error('Přihlášení se nepodařilo. Zkontrolujte e-mail, heslo a ověření účtu.');
+      const session=await api('/session');setAdmin(session.user);setMode('ready');
+      if(reauth){const action=pending;setPending(null);await perform(action);}else setError('');
+    }catch(e){if(e.status===403)setMode('forbidden');setError(e.message);}finally{setBusy(false);setPassword('');}
+  }
+  async function perform(input){
+    setBusy(true);setError('');setMessage('');
+    try{
+      const result=await api('/users',input);setMessage(result.message);setWarning(!!result.warning);
+      if(result.selfSignedOut){setEmail(input.action==='update'?input.email:admin.email);clearAccount();setMode('login');setAdmin(null);setSelected(null);}else setReload(v=>v+1);
+    }catch(e){if(e.code==='ADMIN_REAUTH_REQUIRED'){returnFocus.current=document.activeElement;setPassword('');setPending(input);}else if(e.status===401){clearAccount();setMode('login');setError('Přihlášení vypršelo. Přihlaste se znovu.');}else setError(e.message);}finally{setBusy(false);}
+  }
+  async function logout(){setBusy(true);try{const {client}=await creatorClient();await client.signOut();}finally{clearAccount();setAdmin(null);setMode('login');setSelected(null);setBusy(false);setError('');setMessage('');}}
+  const changedEmail=detail&&editEmail.trim().toLowerCase()!==detail.user.email.toLowerCase();
+  return <div className="pa-root"><header className="pa-header"><a href="/" className="pa-brand"><ShieldCheck size={29}/><span>PÁTRAČ<small>ADMINISTRACE</small></span></a><div className="pa-header-actions">{admin&&<span>{admin.email}</span>}<a href="/"><ArrowLeft size={16}/> Do hry</a>{mode!=='loading'&&<button disabled={busy} onClick={logout}><LogOut size={17}/> Odhlásit se</button>}</div></header>
+    <main className="pa-main"><div className="pa-heading"><span className="pa-eyebrow">SPRÁVA PÁTRAČE</span><h1>Účty a přístupy</h1><p>Spravujte tvůrce výprav na jednom místě.</p></div>
+    {error&&<div className="pa-alert" role="alert">{error}</div>}{message&&<div className={'pa-message'+(warning?' warning':'')} role="status">{message}</div>}
+    {mode==='loading'&&<p role="status">Ověřuji přístup…</p>}
+    {mode==='unavailable'&&<section className="pa-card"><h2>Administrace není dostupná</h2><p>Pokud ji právě nastavujete, nejprve dokončete přidání správcovského oprávnění do databáze.</p><button className="pa-primary" onClick={()=>location.reload()}>Zkusit znovu</button></section>}
+    {mode==='forbidden'&&<section className="pa-card"><h2>Přístup pouze pro správce</h2><p>Běžný účet tvůrce do administrace přístup nemá.</p><button className="pa-primary" onClick={logout}>Přihlásit jiný účet</button></section>}
+    {mode==='login'&&<section className="pa-card pa-login"><ShieldCheck size={34}/><h2>Přihlášení správce</h2><p>Použijte svůj ověřený účet Pátrače se správcovským oprávněním.</p><form onSubmit={e=>login(e)}><label>E-mail<input type="email" required autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Heslo<input type="password" required maxLength={128} autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/></label><button className="pa-primary" disabled={busy}>{busy?'Přihlašuji…':'Přihlásit se'}</button></form></section>}
+    {mode==='ready'&&<><div className="pa-stats"><div><UsersRound/><span>Celkem účtů<strong>{list?.stats.total??'—'}</strong></span></div><div><CheckCircle2/><span>Ověřené e-maily<strong>{list?.stats.verified??'—'}</strong></span></div><div><Mail/><span>Čeká na ověření<strong>{list?list.stats.total-list.stats.verified:'—'}</strong></span></div></div>
+    <div className="pa-grid"><section className="pa-card pa-users"><div className="pa-card-heading"><h2>Tvůrci výprav</h2><span>{list?.total??0} účtů</span></div><label className="pa-search"><Search size={19}/><input aria-label="Hledat účet podle e-mailu nebo přezdívky" placeholder="Hledat e-mail nebo přezdívku" value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></label><div aria-busy={loadingList} className="pa-user-list">{list?.users.map(user=><button className={'pa-user '+(selected===user.id?'selected':'')} disabled={busy} key={user.id} onClick={()=>{setSelected(user.id);setError('');setMessage('');}}><span className="pa-avatar">{user.name.slice(0,1).toUpperCase()}</span><span className="pa-user-name"><strong>{user.name}</strong><small>{user.email}</small><span className={'pa-badge '+(user.emailVerified?'verified':'')}>{user.emailVerified?'Ověřený e-mail':'Čeká na ověření'}</span></span><span className="pa-game-count">{user.games}<small>výprav</small></span><ChevronRight size={18}/></button>)}{!loadingList&&list?.users.length===0&&<p className="pa-empty">Žádné účty neodpovídají hledání.</p>}</div><div className="pa-pagination"><button aria-label="Předchozí stránka" disabled={page===0||loadingList} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={18}/></button><span>Strana {page+1} / {Math.max(1,Math.ceil((list?.total||0)/20))}</span><button aria-label="Další stránka" disabled={loadingList||(page+1)*20>=(list?.total||0)} onClick={()=>setPage(p=>p+1)}><ChevronRight size={18}/></button></div></section>
+    <section className="pa-card pa-detail">{!selected?<div className="pa-empty"><UsersRound size={38}/><h2>Vyberte účet</h2><p>Uvidíte údaje, výpravy a dostupné akce.</p></div>:!detail?<p role="status">Načítám účet…</p>:<><div className="pa-card-heading"><div><h2>{detail.user.name}</h2><small>Vytvořeno {date(detail.user.createdAt)}</small></div><span className={'pa-badge '+(detail.user.emailVerified?'verified':'')}>{detail.user.emailVerified?'Ověřeno':'Neověřeno'}</span></div><form onSubmit={e=>{e.preventDefault();perform({action:'update',id:detail.user.id,name,email:editEmail,updatedAt:detail.user.updatedAt});}}><label>Přezdívka<input disabled={busy} required maxLength={60} value={name} onChange={e=>setName(e.target.value)}/></label><label>E-mail<input disabled={busy} type="email" required maxLength={254} value={editEmail} onChange={e=>setEditEmail(e.target.value)}/></label>{changedEmail&&<p className="pa-note">Změna e-mailu odhlásí tento účet ze všech zařízení. Na novou adresu přijde ověřovací odkaz.{detail.user.id===admin.id?' Měníte svůj vlastní účet; bude potřeba znovu ověřit e-mail a přihlásit se.':''}</p>}<button className="pa-primary" disabled={busy}>{busy?'Zpracovávám…':'Uložit změny'}</button></form><h3>Přístup k účtu</h3><div className="pa-actions"><button disabled={busy} onClick={()=>perform({action:'reset',id:detail.user.id})}><KeyRound size={18}/> Poslat obnovu hesla</button>{!detail.user.emailVerified&&<button disabled={busy} onClick={()=>perform({action:'verify',id:detail.user.id})}><Mail size={18}/> Poslat ověření e-mailu</button>}<button disabled={busy} onClick={()=>perform({action:'revoke',id:detail.user.id})}><LogOut size={18}/> Odhlásit všechna zařízení</button></div><h3>Výpravy ({detail.games.length})</h3>{detail.games.length?<ul className="pa-games">{detail.games.map(g=><li key={g.code}><strong>{g.name}</strong><span>{g.code} · {g.status==='waiting'?'Připravená':'Spuštěná'}</span></li>)}</ul>:<p className="pa-muted">Účet zatím nevytvořil žádnou výpravu.</p>}<h3>Historie správy</h3><ul className="pa-audit">{detail.audit.map((a,i)=><li key={i}><strong>{actionName[a.action]||a.action}</strong><span>{statusName[a.status]||a.status} · {date(a.created_at)}</span><small>{a.actor||'Správce'}</small>{auditDetails(a.details)&&<p className="pa-muted">{auditDetails(a.details)}</p>}</li>)}</ul>{!detail.audit.length&&<p className="pa-muted">Zatím žádné změny správce.</p>}</>}</section></div></>}
+    </main>{pending&&<div className="pa-modal-backdrop"><section ref={modal} className="pa-card pa-modal" role="dialog" aria-modal="true" aria-labelledby="pa-reauth"><button className="pa-close" aria-label="Zavřít" disabled={busy} onClick={()=>{setPending(null);setPassword('');}}><X/></button><KeyRound size={30}/><h2 id="pa-reauth">Potvrďte své přihlášení</h2><p>Pro změny účtů jednou za 15 minut znovu zadejte své heslo.</p><p className="pa-muted">{admin?.email}</p><p>{pending&&actionName[pending.action]} · {detail?.user.email}</p>{error&&<div className="pa-alert" role="alert">{error}</div>}<form onSubmit={e=>login(e,true)}><label>Vaše heslo<input autoFocus type="password" required maxLength={128} autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/></label><button className="pa-primary" disabled={busy}>{busy?'Ověřuji…':'Potvrdit a pokračovat'}</button></form></section></div>}</div>;
+}
