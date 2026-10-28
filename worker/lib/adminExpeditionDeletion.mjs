@@ -1,3 +1,4 @@
+import {activePlayerCount,activePlayersQuery,activePlayMessage} from './activeExpeditionPlayers.mjs';
 import {removeExpedition} from './expeditionLifecycle.mjs';
 import {GameError} from './patrac-engine.mjs';
 export async function deleteAsAdmin({db,bucket,actor,user,input,now,ErrorType}){
@@ -10,16 +11,17 @@ export async function deleteAsAdmin({db,bucket,actor,user,input,now,ErrorType}){
  if(audit){const details=JSON.parse(audit.details);if(audit.target_id!==user.id||audit.action!=='delete-expedition'||details.code!==code||details.reason!==reason)throw new ErrorType('Identifikátor smazání byl již použit.',409,'ADMIN_CONFLICT');if(audit.status==='success')return{ok:true,message:'Výprava už byla smazána. Tvůrce má oznámení s důvodem.'};}
  let row=await db.prepare('SELECT e.* FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND c.creator_id=?').bind(code,user.id).first();
  if(!row)throw new ErrorType('Výprava tomuto účtu nepatří nebo už neexistuje.',404);
+ if(await activePlayerCount(db,code))throw new ErrorType(activePlayMessage,409,'ACTIVE_PLAYERS');
  const game=JSON.parse(row.payload);
  if(!audit){
   if(row.version!==version||game.adminDeletion)throw new ErrorType('Výpravu mezitím změnilo jiné okno. Obnovte detail účtu.',409,'ADMIN_CONFLICT');
   const details=JSON.stringify({code,name:game.name,reason}),stamp=now();
   const result=await db.batch([
    db.prepare(`INSERT OR IGNORE INTO patrac_admin_audit(id,actor_id,target_id,action,details,status,created_at)
-    SELECT ?,?,?,'delete-expedition',?,'pending',? WHERE EXISTS(SELECT 1 FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND c.creator_id=? AND e.version=? AND json_extract(e.payload,'$.adminDeletion') IS NULL)
+    SELECT ?,?,?,'delete-expedition',?,'pending',? WHERE EXISTS(SELECT 1 FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND c.creator_id=? AND e.version=? AND json_extract(e.payload,'$.adminDeletion') IS NULL AND NOT EXISTS(${activePlayersQuery('e.code')}))
     AND (SELECT COUNT(*) FROM patrac_admin_audit WHERE actor_id=? AND created_at>?)<30`).bind(id,actor.id,user.id,details,stamp,code,user.id,version,actor.id,stamp-60000),
    db.prepare(`UPDATE patrac_expeditions SET payload=json_set(payload,'$.status','deleting','$.adminDeletion',?),version=version+1
-    WHERE code=? AND version=? AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=? AND details=? AND status='pending')`).bind(id,code,version,id,details),
+    WHERE code=? AND version=? AND NOT EXISTS(${activePlayersQuery('patrac_expeditions.code')}) AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=? AND details=? AND status='pending')`).bind(id,code,version,id,details),
   ]);
   if(!result[0].meta.changes)throw new ErrorType('Smazání nelze zahájit. Obnovte detail nebo chvíli počkejte.',409,'ADMIN_CONFLICT');
   row=await db.prepare('SELECT * FROM patrac_expeditions WHERE code=?').bind(code).first();

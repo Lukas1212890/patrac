@@ -98,6 +98,9 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:0,confirmation:'HJKLMNP'},token)).status,409);
   const bucket=await mf.getR2Bucket('BUCKET');await bucket.put('hints/HJKLMNP/old-orphan','image');await bucket.put('hints/ABCDEFG/keep','other-image');
   await db.prepare("UPDATE patrac_access SET expires_at=0 WHERE user_id='user'").run();
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'HJKLMNP'},token)).status,409);
+  assert.ok(await bucket.head('hints/HJKLMNP/old-orphan'));
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'abandon',confirm:true},players.late)).status,200);
   const deleted=await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'HJKLMNP'},token);assert.equal(deleted.status,200,await deleted.clone().text());
   assert.equal(await bucket.head('hints/HJKLMNP/old-orphan'),null);assert.ok(await bucket.head('hints/ABCDEFG/keep'));
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_teams WHERE code=?').bind('HJKLMNP').first()).n,0);

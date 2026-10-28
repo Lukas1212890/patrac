@@ -1,3 +1,4 @@
+import {activePlayersQuery} from './activeExpeditionPlayers.mjs';
 import {availableNickname} from './nicknames.mjs';
 import { addMonths } from './billing.mjs';
 import {deleteAsAdmin} from './adminExpeditionDeletion.mjs';
@@ -92,7 +93,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
     },
     async detail(request, id) {
       await requireAdmin(request); const user = await target(id);
-      const games = await db.prepare(`SELECT e.code,e.version,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.status') AS status,json_extract(e.payload,'$.adminDeletion') AS deleteOperation,a.details AS deletionDetails
+      const games = await db.prepare(`SELECT e.code,e.version,EXISTS(${activePlayersQuery('e.code')}) AS activePlayers,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.status') AS status,json_extract(e.payload,'$.adminDeletion') AS deleteOperation,a.details AS deletionDetails
         FROM patrac_creator_games g JOIN patrac_expeditions e ON e.code = g.code LEFT JOIN patrac_admin_audit a ON a.id=json_extract(e.payload,'$.adminDeletion') WHERE g.creator_id = ? ORDER BY g.linked_at DESC LIMIT 100`).bind(id).all();
       const audit = await db.prepare(`SELECT a.action,a.status,a.created_at,a.details,u.email AS actor FROM patrac_admin_audit a
         LEFT JOIN patrac_auth_user u ON u.id = a.actor_id WHERE a.target_id = ? ORDER BY a.created_at DESC LIMIT 20`).bind(id).all();

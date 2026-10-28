@@ -46,3 +46,30 @@ test('transaction failures do not publish false notices and owner completion als
  f.finalFailure();await assert.rejects(()=>f.api.change('admin',f.input));assert.equal((await creatorNotices(f.db,'creator')).notices.length,0);assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_teams').get().n,1);
  const row=f.native.prepare("SELECT version FROM patrac_expeditions WHERE code='ABCDEFG'").get();await removeExpedition(f.db,{list:async()=>({objects:[],truncated:false}),delete:async()=>{}},{code:'ABCDEFG',userId:'creator',version:row.version,confirmation:'ABCDEFG'});assert.equal((await creatorNotices(f.db,'creator')).notices.length,1);assert.equal((await f.api.change('admin',f.input)).ok,true);f.native.close();
 });
+
+test('admin and creator cannot delete an active expedition; the last finish or abandonment releases the lock',async()=>{
+ const f=fixture();try{
+ f.native.exec("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',NULL) WHERE id='team'");
+ f.native.prepare('INSERT INTO patrac_teams(id,code,token_hash,name_key,payload,version) VALUES(?,?,?,?,?,0)').run('second','ABCDEFG','second-token','second-name',JSON.stringify({startedAt:Date.now()-2000,finishedAt:null}));
+ assert.equal((await f.api.detail('admin','creator')).games[0].activePlayers,1);
+ await assert.rejects(()=>f.api.change('admin',f.input),e=>e.status===409&&e.code==='ACTIVE_PLAYERS');
+ assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_admin_audit').get().n,0);assert.ok(f.photos.has('hints/ABCDEFG/photo'));
+ f.native.exec("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',12345) WHERE id='team'");
+ await assert.rejects(()=>f.api.change('admin',f.input),e=>e.status===409);
+ f.native.exec("UPDATE patrac_teams SET payload=json_set(payload,'$.abandonedAt',12346) WHERE id='second'");
+ assert.equal((await f.api.detail('admin','creator')).games[0].activePlayers,0);
+ assert.equal((await f.api.change('admin',f.input)).ok,true);
+ assert.equal((await creatorNotices(f.db,'creator')).notices.length,1);
+ }finally{f.native.close();}
+});
+
+test('a player starting between admin precheck and deletion transaction prevents tombstone, audit and photo removal',async()=>{
+ const f=fixture();try{
+ const batch=f.db.batch;let injected=false;
+ f.db.batch=async statements=>{if(!injected){injected=true;f.native.exec("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',NULL) WHERE id='team'");}return batch(statements);};
+ await assert.rejects(()=>f.api.change('admin',f.input),e=>e.status===409);
+ assert.equal(JSON.parse(f.native.prepare("SELECT payload FROM patrac_expeditions WHERE code='ABCDEFG'").get().payload).status,'running');
+ assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_admin_audit').get().n,0);
+ assert.ok(f.photos.has('hints/ABCDEFG/photo'));
+ }finally{f.native.close();}
+});

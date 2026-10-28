@@ -66,6 +66,8 @@ test('private and public quotas are independent, and deletion clears account att
  assert.equal(await expeditionCount(f.db,'author'),3);assert.equal(await expeditionCount(f.db,'author','public'),2);
  await f.api.start('ABCDEFG',f.users.alice,true);
  const row=f.native.prepare("SELECT version FROM patrac_expeditions WHERE code='ABCDEFG'").get();
+ await assert.rejects(()=>removeExpedition(f.db,{list:async()=>{throw Error('Must not touch photos');}},{code:'ABCDEFG',userId:'author',version:row.version,confirmation:'ABCDEFG'}),e=>e.status===409);
+ await f.api.play('ABCDEFG',f.users.alice,{action:'abandon',confirm:true});
  await removeExpedition(f.db,{list:async()=>({objects:[],truncated:false}),delete:async()=>{}},{code:'ABCDEFG',userId:'author',version:row.version,confirmation:'ABCDEFG'});
  assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_public_attempts').get().n,0);assert.equal(await expeditionCount(f.db,'author','public'),1);assert.equal(await expeditionCount(f.db,'author'),3);f.native.close();
 });
