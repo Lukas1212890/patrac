@@ -1,3 +1,5 @@
+import {routeInfoFor} from '../../shared/routeEstimate.mjs';
+import {validatedRouteInfo} from './routeInfo.mjs';
 import { storeHintPhotos, removeReplacedPhotos } from './photoStorage.mjs';
 import {communityReady,validatePublicInfo,requirePublicAccess} from './publicExpeditions.mjs';
 import { allowedOrigin } from '../origin.mjs';
@@ -65,7 +67,8 @@ export async function createExpedition(request: Request) {
   const limits=await creatorLimits(db(),account!.id),limit=visibility==='public'?limits.public:limits.private;
   const limitMessage=(n:number)=>n===0?'Tvorba nových '+(visibility==='public'?'veřejných':'soukromých')+' výprav je pro tento účet vypnutá.':'Limit '+(visibility==='public'?'veřejných':'soukromých')+' výprav na tomto účtu je '+n+'. Pro další nejprve některou smažte.';
   if (await expeditionCount(db(), account!.id,visibility) >= limit) throw new GameError(limitMessage(limit),409);
-  const config = {...validateExpedition(input),visibility,...(visibility==='public'?{publicInfo:validatePublicInfo(input.publicInfo),published:false}:{})};
+  const validated=validateExpedition(input),route=validatedRouteInfo(input,validated.stations);
+  const config = {...validated,...route,visibility,...(visibility==='public'?{publicInfo:validatePublicInfo(input.publicInfo,route.routeInfo),published:false}:{})};
   if(visibility==='public'&&config.mode!=='race')throw new GameError('Veřejné výpravy se hrají výhradně na čas.');
   const ownerToken = token(), ownerHash = await hash(ownerToken);
   const game = { ...config, status: 'waiting', startedAt: null, createdAt: Date.now() };
@@ -85,7 +88,7 @@ export async function createExpedition(request: Request) {
 export async function viewExpedition(request: Request, code: string) {
   const { row, game } = await getGame(code), who = await identity(request, row), now = Date.now();
   if (game.status === 'deleting' && who.role !== 'owner') throw new GameError('Organizátor tuto výpravu odstranil.',410);
-  const meta = { code, name: game.name, mode: game.mode, status: game.status, startedAt: game.startedAt, totalStations: game.stations.length, visibility:game.visibility||'private' };
+  const meta = { code, name: game.name, mode: game.mode, status: game.status, startedAt: game.startedAt, totalStations: game.stations.length, visibility:game.visibility||'private',routeInfo:routeInfoFor(game) };
   if (who.role === 'owner') {
     const publicLocked=game.visibility==='public'?!!await db().prepare('SELECT id FROM patrac_public_attempts WHERE code=? LIMIT 1').bind(code).first():false;
     const playerNames=game.visibility==='public'?"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_public_attempts a ON a.team_id=t.id LEFT JOIN patrac_auth_user u ON u.id=a.user_id WHERE t.code=?":"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_auth_user u ON u.id=t.user_id WHERE t.code = ?";
@@ -147,7 +150,7 @@ export async function changeExpedition(request: Request, code: string) {
       }
       await requirePublicAccess(db(),env,who.accountId);
       if(input.action==='publish'){
-        validatePublicInfo(game.publicInfo);validateExpedition(game);if(game.mode!=='race')throw new GameError('Veřejná výprava musí být na čas.');
+        validatePublicInfo(game.publicInfo,routeInfoFor(game));validateExpedition(game);if(game.mode!=='race')throw new GameError('Veřejná výprava musí být na čas.');
         const changed=await db().prepare("UPDATE patrac_expeditions SET payload=json_set(payload,'$.published',json('true'),'$.status','running'),version=version+1 WHERE code=? AND version=?").bind(code,row.version).run();
         if(!changed.meta.changes)throw new GameError('Výprava se mezitím změnila.',409);return json({ok:true});
       }
@@ -155,7 +158,8 @@ export async function changeExpedition(request: Request, code: string) {
       if(input.version!==row.version)throw new GameError('Výprava se mezitím změnila. Obnovte ji.',409);
       if(await db().prepare('SELECT id FROM patrac_public_attempts WHERE code=? LIMIT 1').bind(code).first())throw new GameError('Po prvním zahájeném pokusu je veřejná trasa uzamčená kvůli férovému žebříčku.',409);
       const validated=validateExpedition(input.game);if(validated.mode!=='race')throw new GameError('Veřejná výprava musí být na čas.');
-      const next=await storePhotos({...game,...validated,visibility:'public',publicInfo:validatePublicInfo(input.game.publicInfo)},code,game);
+      const route=validatedRouteInfo(input.game,validated.stations);
+      const next=await storePhotos({...game,...validated,...route,visibility:'public',publicInfo:validatePublicInfo(input.game.publicInfo,route.routeInfo)},code,game);
       const changed=await db().prepare('UPDATE patrac_expeditions SET payload=?,version=version+1 WHERE code=? AND version=? AND NOT EXISTS(SELECT 1 FROM patrac_public_attempts WHERE code=?)').bind(JSON.stringify(next),code,row.version,code).run();
       if(!changed.meta.changes){try{await removeReplacedPhotos(next,game,code,env.BUCKET);}catch{}throw new GameError('Mezitím někdo zahájil pokus nebo změnil trasu. Obnovte výpravu.',409);}
       try{await removeReplacedPhotos(game,next,code,env.BUCKET);}catch{}return json({ok:true});
@@ -165,10 +169,11 @@ export async function changeExpedition(request: Request, code: string) {
     let next;
     if (input.action === 'save') {
       if (input.version !== row.version) throw new GameError('Výpravu mezitím změnilo jiné okno. Obnovte ji.', 409);
-      next = await storePhotos({ ...game, ...validateExpedition(input.game) }, code, game);
+      const validated=validateExpedition(input.game);
+      next = await storePhotos({ ...game, ...validated,...validatedRouteInfo(input.game,validated.stations) }, code, game);
     } else if (input.action === 'start') {
       const count = await db().prepare('SELECT COUNT(*) as n FROM patrac_teams WHERE code = ?').bind(code).first<any>();
-      if (count.n < 1) throw new GameError('Nejdříve připojte alespoň jeden tým.');
+      if (count.n < 1) throw new GameError('Nejdříve připojte alespoň jednoho hráče.');
       next = { ...game, status: 'running', startedAt: Date.now() };
     } else throw new GameError('Neznámá akce autora.');
     const sql = "UPDATE patrac_expeditions SET payload = ?, version = version + 1 WHERE code = ? AND version = ? AND json_extract(payload, '$.status') = 'waiting'";

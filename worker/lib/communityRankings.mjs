@@ -1,3 +1,5 @@
+import {routeEstimateSQL} from './routeInfo.mjs';
+import {routeInfoFor} from '../../shared/routeEstimate.mjs';
 import {GameError} from './patrac-engine.mjs';
 import {billingEnvironment} from './billing.mjs';
 import {communityReady} from './publicExpeditions.mjs';
@@ -59,12 +61,12 @@ export function createRankingService({db,env}){
   if(!await communityReady(db))return{ready:false,environment,ratedExpeditions:[],activePlayers:[],myExpeditions:null,myResults:null};
   const ratingsReady=await reviewsReady(db);let ratedExpeditions=[];
   if(ratingsReady){
-   const rows=await db.prepare(`SELECT e.code,json_extract(e.payload,'$.name') AS name,substr(u.name,1,60) AS author,
+   const rows=await db.prepare(`SELECT ${routeEstimateSQL} AS routePayload,e.code,json_extract(e.payload,'$.name') AS name,substr(u.name,1,60) AS author,
     COUNT(*) AS count,ROUND(AVG(r.stars),1) AS average,json_extract(e.payload,'$.publicInfo.distanceKm') AS distanceKm,
     json_extract(e.payload,'$.publicInfo.difficulty') AS difficulty
     FROM patrac_public_reviews r JOIN patrac_expeditions e ON e.code=r.code
     JOIN patrac_creator_games c ON c.code=e.code JOIN patrac_auth_user u ON u.id=c.creator_id
-    WHERE r.environment=? AND ${VISIBLE} GROUP BY e.code ORDER BY AVG(r.stars) DESC,COUNT(*) DESC,e.code ASC LIMIT 20`).bind(environment).all();ratedExpeditions=rows.results;
+    WHERE r.environment=? AND ${VISIBLE} GROUP BY e.code ORDER BY AVG(r.stars) DESC,COUNT(*) DESC,e.code ASC LIMIT 20`).bind(environment).all();ratedExpeditions=rows.results.map(({routePayload,...row})=>({...row,...routeInfoFor(JSON.parse(routePayload))}));
   }
   const players=await db.prepare(activityCTE+` SELECT substr(u.name,1,60) AS nickname,r.completed,r.rank,
    CASE WHEN r.user_id=? THEN 1 ELSE 0 END AS isMe FROM ranked r JOIN patrac_auth_user u ON u.id=r.user_id

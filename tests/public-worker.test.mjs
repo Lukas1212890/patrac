@@ -23,8 +23,13 @@ test('Worker community flow enforces real sessions, two public slots, one concur
    const login=await request('/api/auth/sign-in/email',{email:id+'@example.com',password});assert.equal(login.status,200);tokens[id]=login.headers.get('set-auth-token');
   }
   const station={name:'Start',lat:49.3,lng:17.39,radius:25,question:'Secret one',answer:'first',hints:[{type:'text',content:'Secret hint',minutes:2}]};
-  const game={name:'Veřejná výprava',mode:'race',visibility:'public',publicInfo:{description:'Výprava pro všechny předplatitele do přírody.',difficulty:'easy',distanceKm:1,estimatedMinutes:30},stations:[station,{...station,name:'Druhá zastávka',lat:49.301,lng:17.391,answer:'last'}]};
+  const game={name:'Veřejná výprava',mode:'race',visibility:'public',timeEstimateOverride:null,publicInfo:{description:'Výprava pro všechny předplatitele do přírody.',difficulty:'easy',distanceKm:1,estimatedMinutes:30},stations:[station,{...station,name:'Druhá zastávka',lat:49.301,lng:17.391,answer:'last'}]};
   const create=await request('/api/expeditions',game,tokens.author);assert.equal(create.status,201,await create.clone().text());const {code}=await create.json();
+  const initialRoute=await(await request('/api/expeditions/'+code,null,tokens.author)).json();assert.equal(initialRoute.game.routeInfo.timeEstimateSource,'automatic');assert.equal(initialRoute.game.routeInfo.estimatedMinutes,15);assert.ok(initialRoute.game.routeInfo.distanceMeters>100&&initialRoute.game.routeInfo.distanceMeters<200);
+  const manualSave=await request('/api/expeditions/'+code,{action:'save',version:initialRoute.version,game:{...game,timeEstimateOverride:75,publicInfo:{...game.publicInfo,distanceKm:999,estimatedMinutes:999}}},tokens.author);assert.equal(manualSave.status,200,await manualSave.clone().text());
+  const manualRoute=await(await request('/api/expeditions/'+code,null,tokens.author)).json();assert.equal(manualRoute.game.routeInfo.estimatedMinutes,75);assert.equal(manualRoute.game.publicInfo.timeEstimateSource,'author');assert.ok(manualRoute.game.publicInfo.distanceKm<1);
+  assert.equal((await request('/api/expeditions/'+code,{action:'save',version:manualRoute.version,game:{...game,timeEstimateOverride:''}},tokens.author)).status,400);
+  assert.equal((await request('/api/expeditions/'+code,{action:'save',version:manualRoute.version,game},tokens.author)).status,200);
   assert.equal((await request('/api/expeditions',game,tokens.unpaid)).status,402);
   assert.equal((await request('/api/expeditions',game,tokens.author)).status,201);assert.equal((await request('/api/expeditions',game,tokens.author)).status,409);
   for(let i=0;i<3;i++)assert.equal((await request('/api/expeditions',{...game,visibility:'private'},tokens.author)).status,201);
@@ -44,7 +49,7 @@ test('Worker community flow enforces real sessions, two public slots, one concur
   assert.equal((await(await request('/api/public/expeditions')).json()).expeditions.length,0);
   assert.equal((await request('/api/expeditions/'+code,{action:'publish'},tokens.player)).status,403);
   assert.equal((await request('/api/expeditions/'+code,{action:'publish'},tokens.author)).status,200);
-  const listing=await(await request('/api/public/expeditions')).json();assert.equal(listing.expeditions.length,1);assert.equal(JSON.stringify(listing).includes('first'),false);assert.equal(JSON.stringify(listing).includes('49.301'),false);
+  const listing=await(await request('/api/public/expeditions')).json();assert.equal(listing.expeditions.length,1);assert.equal(listing.expeditions[0].timeEstimateSource,'automatic');assert.equal(listing.expeditions[0].estimatedMinutes,15);assert.equal(JSON.stringify(listing).includes('routePayload'),false);assert.equal(JSON.stringify(listing).includes('first'),false);assert.equal(JSON.stringify(listing).includes('49.301'),false);
   assert.equal((await request('/api/public/expeditions/'+code+'/start',{confirm:true})).status,401);
   assert.equal((await request('/api/public/expeditions/'+code+'/start',{confirm:true},tokens.unpaid)).status,402);
   assert.equal((await request('/api/public/expeditions/'+code+'/start',{confirm:true},tokens.author)).status,403);

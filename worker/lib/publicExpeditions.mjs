@@ -1,26 +1,26 @@
+import {routeEstimateSQL} from './routeInfo.mjs';
+import {routeInfoFor} from '../../shared/routeEstimate.mjs';
 import {GameError,newTeam,applyAction,teamProjection,score} from './patrac-engine.mjs';
 import {accessState,billingEnvironment} from './billing.mjs';
 import {createReviewService,reviewsReady} from './publicReviews.mjs';
 import {createCreatorRewards} from './creatorRewards.mjs';
 export async function communityReady(db){return !!await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_public_attempts'").first();}
-export function validatePublicInfo(value){
+export function validatePublicInfo(value,routeInfo){
  const info=value||{};
  if(typeof info.description!=='string'||info.description.trim().length<10||info.description.trim().length>1500)throw new GameError('Veřejné výpravě doplňte popis (10 až 1500 znaků).');
  if(!['easy','medium','hard'].includes(info.difficulty))throw new GameError('Vyberte obtížnost veřejné výpravy.');
- const distanceKm=Number(info.distanceKm),estimatedMinutes=Number(info.estimatedMinutes);
- if(!Number.isFinite(distanceKm)||distanceKm<=0||distanceKm>100)throw new GameError('Délka trasy musí být větší než 0 a nejvýše 100 km.');
- if(!Number.isInteger(estimatedMinutes)||estimatedMinutes<5||estimatedMinutes>1440)throw new GameError('Odhad času musí být 5 až 1440 minut.');
- return{description:info.description.trim(),difficulty:info.difficulty,distanceKm,estimatedMinutes};
+ if(!routeInfo)throw new GameError('Nejprve doplňte souřadnice všech stanovišť.');
+ return{description:info.description.trim(),difficulty:info.difficulty,...routeInfo};
 }
 export async function requirePublicAccess(db,env,userId,stamp=Date.now()){const access=await accessState(db,userId,billingEnvironment(env),stamp);if(!access.active)throw new GameError('Veřejné výpravy jsou dostupné s aktivním předplatným. Vyberte si období v profilu.',402);return access;}
-const CARD=`e.code,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.publicInfo.description') AS description,
+const CARD=`${routeEstimateSQL} AS routePayload,e.code,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.publicInfo.description') AS description,
  json_extract(e.payload,'$.publicInfo.difficulty') AS difficulty,json_extract(e.payload,'$.publicInfo.distanceKm') AS distanceKm,
  json_extract(e.payload,'$.publicInfo.estimatedMinutes') AS estimatedMinutes,json_extract(e.payload,'$.stations[0].lat') AS lat,
  json_extract(e.payload,'$.stations[0].lng') AS lng,json_array_length(json_extract(e.payload,'$.stations')) AS totalStations,
  substr(u.name,1,60) AS author,c.creator_id AS ownerId`;
 const PUBLIC="json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.published')=1 AND json_extract(e.payload,'$.status')='running'";
 const BASE='FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code JOIN patrac_auth_user u ON u.id=c.creator_id';
-const safeCard=({ownerId,...card})=>card;
+const safeCard=({ownerId,routePayload,...card})=>({...card,...routeInfoFor(JSON.parse(routePayload))});
 export function createPublicService({db,env,revealPhoto,now=Date.now}){
  const environment=billingEnvironment(env),reviews=createReviewService({db,env,now});
  async function ready(){if(!await communityReady(db))throw new GameError('Veřejné výpravy se právě připravují.',503);}
