@@ -2,7 +2,7 @@
 import { apiUrl } from '../lib/apiUrl.mjs';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Compass, ArrowLeft, ArrowRight, Plus, Users, Flag, Clock3, Trophy, LockKeyhole, Lightbulb, Image as ImageIcon, Navigation, Map as MapIcon, RefreshCw, Download, Copy, Check, ChevronRight, LocateFixed, HelpCircle, ShieldCheck, UserRound, Trash2, Globe2, Map as MapTab, Footprints } from 'lucide-react';
+import { Compass, ArrowLeft, ArrowRight, Plus, Users, Flag, Clock3, Trophy, LockKeyhole, Lightbulb, Image as ImageIcon, Navigation, MapPin, Map as MapIcon, RefreshCw, Download, Copy, Check, ChevronRight, LocateFixed, HelpCircle, ShieldCheck, UserRound, Trash2, Globe2, Map as MapTab, Footprints } from 'lucide-react';
 import CommunityMap from './CommunityMap';
 import PublicExpeditionDetail from './PublicExpeditionDetail';
 import CreatorHub from './CreatorHub';
