@@ -12,8 +12,8 @@ export function getBaseMapConfig(baseMap) {
   }
 
   return {
-    tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"],
-    attribution: "Sources: Esri, HERE, Garmin, Intermap, USGS, OpenStreetMap contributors, GIS User Community",
+    tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+    attribution: "© <a href='https://www.openstreetmap.org/copyright' target='_blank' rel='noopener noreferrer'>OpenStreetMap contributors</a>",
     maxzoom: 19,
   };
 }

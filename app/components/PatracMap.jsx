@@ -22,9 +22,10 @@ export default function PatracMap({ target, position, onPick, heading = null }) 
     loadMap().then(lib => {
       if (cancelled || !node.current) return;
       const base = getBaseMapConfig(baseMap);
-      const m = new lib.Map({ container: node.current, style: { version: 8, sources: { base: { type: 'raster', tiles: base.tiles, tileSize: 256, attribution: base.attribution, maxzoom: base.maxzoom } }, layers: [{ id: 'base', type: 'raster', source: 'base' }] }, center: target ? [target.lng, target.lat] : [15.5, 49.8], zoom: target ? 16 : 6, maxZoom: base.maxzoom + 1 });
+      const m = new lib.Map({ container: node.current, style: { version: 8, sources: { base: { type: 'raster', tiles: base.tiles, tileSize: 256, attribution: base.attribution, maxzoom: base.maxzoom } }, layers: [{ id: 'base', type: 'raster', source: 'base' }] }, center: target ? [target.lng, target.lat] : [15.5, 49.8], zoom: target ? 16 : 6, maxZoom: base.maxzoom + 1, attributionControl: false });
       map.current = m;
       m.addControl(new lib.NavigationControl({ showCompass: true }), 'top-right');
+      m.addControl(new lib.AttributionControl({ compact: false }), 'bottom-right');
       const marker = document.createElement('div'); marker.className = 'p-target-marker'; marker.textContent = '✦';
       pin.current = new lib.Marker({ element: marker, draggable: Boolean(onPick) }).setLngLat(target ? [target.lng, target.lat] : [15.5, 49.8]).addTo(m);
       if (onPick) { pin.current.on('dragend', () => { const p = pin.current.getLngLat(); callback.current?.({ lat: +p.lat.toFixed(6), lng: +p.lng.toFixed(6) }); }); m.on('click', e => callback.current?.({ lat: +e.lngLat.lat.toFixed(6), lng: +e.lngLat.lng.toFixed(6) })); }
@@ -86,6 +87,6 @@ export function RasterMap({ target, position, onPick, baseMap, navigation = fals
       {!overview && !navigation && target && <div className="p-target-marker" style={pointStyle(target)}>✦</div>}{position && <div className={navigation ? 'p-stopik-user-dot' : 'p-user-marker'} style={pointStyle(position)}/>}
     </div>
     {!navigation && <div className="p-raster-controls"><button type="button" aria-label="Přiblížit mapu" onClick={() => setZoom(z => Math.min(base.maxzoom, z + 1))}>+</button><button type="button" aria-label="Oddálit mapu" onClick={() => setZoom(z => Math.max(2, z - 1))}>−</button><button type="button" aria-label="Zobrazit cíl" onClick={() => { if (target) setCenter(target); }}>◎</button></div>}
-    <div className="p-raster-credit">{baseMap === 'map' ? 'Esri, HERE, Garmin, USGS, © OpenStreetMap, GIS User Community' : 'Esri, Maxar, GIS User Community'}</div>
+    <div className="p-raster-credit">{baseMap === 'map' ? <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> : 'Esri, Maxar, GIS User Community'}</div>
   </div>;
 }

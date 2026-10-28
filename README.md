@@ -101,3 +101,8 @@ Veřejná hra používá samostatné `/api/public/*` routy s účtem, ne sdílen
 ### Hodnocení veřejných výprav
 
 Po migraci `drizzle/0006_public_reviews.sql` detail veřejné výpravy nabízí 1–5 hvězdiček a volitelný komentář do 1000 znaků. Hodnotit smí jen ověřený účet s dokončeným pokusem ve stejném prostředí; autor vlastní výpravu nehodnotí. Vypršení předplatného nebrání zpětné vazbě po dohrání. Každý účet má jedno upravitelné a odstranitelné hodnocení na výpravu a prostředí, chráněné primárním klíčem. Komentáře se vykreslují jako prostý text a používají přezdívku z profilu; veřejná odpověď neobsahuje ID účtů ani e-maily. Seznam se načítá po 20 položkách. Průměr a počet hodnocení se ukazují v detailu a seznamu mapy. Testovací a ostrá hodnocení se nemíchají. Smazání výpravy odstraní i hodnocení. Před migrací tato sekce zůstává skrytá a ostatní funkce dál fungují.
+
+
+### Mapový podklad
+
+Základní mapa Pátrače používá OpenStreetMap Standard (`https://tile.openstreetmap.org/{z}/{x}/{y}.png`), stejně jako Stopař. Je to veřejná služba bez garance dostupnosti, nikoli smluvně zajištěný komerční hosting. Dodržovat https://operations.osmfoundation.org/policies/tiles/: viditelná proklikávací atribuce, Referer z prohlížeče a běžná HTTP cache. Referrer-Policy posílá mezi doménami jen origin; neodesílá cestu ani parametry hry. Není přidaný proxy, offline stahování oblastí ani nové cachování externích map v service workeru. Letecký podklad zůstává Esri. Všechny úpravy jsou jen v repozitáři Pátrače.

@@ -12,8 +12,9 @@ export default function CommunityMap({onSelect,onJoin}){
  viewport.current=bounds;
  useEffect(()=>{let live=true;const controller=new AbortController();const timer=setTimeout(()=>publicRequest('/expeditions?bounds='+box,undefined,controller.signal).then(data=>{if(live){setResult(data);setError('');}}).catch(e=>{if(live&&e.name!=='AbortError')setError(e.message);}),250);return()=>{live=false;clearTimeout(timer);controller.abort();};},[box,reload]);
  useEffect(()=>{if(fallback)return;let live=true;loadMap().then(lib=>{if(!live||!node.current)return;try{
-  const base=getBaseMapConfig('map'),m=new lib.Map({container:node.current,style:{version:8,sources:{base:{type:'raster',tiles:base.tiles,tileSize:256,attribution:base.attribution,maxzoom:base.maxzoom}},layers:[{id:'base',type:'raster',source:'base'}]},center:[15.5,49.8],zoom:6,maxZoom:19,renderWorldCopies:false});map.current=m;
+  const base=getBaseMapConfig('map'),m=new lib.Map({container:node.current,style:{version:8,sources:{base:{type:'raster',tiles:base.tiles,tileSize:256,attribution:base.attribution,maxzoom:base.maxzoom}},layers:[{id:'base',type:'raster',source:'base'}]},center:[15.5,49.8],zoom:6,maxZoom:19,renderWorldCopies:false,attributionControl:false});map.current=m;
   m.addControl(new lib.NavigationControl({showCompass:false}),'top-right');
+  m.addControl(new lib.AttributionControl({compact:false}),'bottom-right');
   const update=()=>{const b=m.getBounds();viewport.current?.([b.getWest(),b.getSouth(),b.getEast(),b.getNorth()]);};
   m.on('load',()=>{if(live){setReady(true);update();}});m.on('moveend',update);m.on('error',()=>{if(live)setMapError('Mapový podklad se nepodařilo načíst. Výpravy můžete otevřít i ze seznamu.');});
  }catch{if(live)setFallback(true);}}).catch(()=>{if(live)setFallback(true);});return()=>{live=false;pins.current.forEach(p=>p.remove());pins.current=[];map.current?.remove();map.current=null;};},[fallback]);

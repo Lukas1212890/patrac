@@ -88,7 +88,7 @@ export default function useStopikMap({
         });
 
         window.__patracNavigationMap = map;
-        map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+        map.addControl(new maplibregl.AttributionControl({ compact: false }), "bottom-right");
 
         map.on("load", () => {
           if (cancelled) return;

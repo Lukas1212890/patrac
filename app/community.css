@@ -42,3 +42,8 @@
  .p-map-discovery .p-discovery-info>.p-small{font-size:11px;line-height:1.5;margin-top:9px}
 }
 @media(max-width:360px){.p-map-tools{gap:5px;right:57px;left:8px}.p-map-tools button{font-size:11px;padding:10px 8px;gap:4px}}
+
+/* Keep OSM attribution visible below the floating action, including on phones. */
+.p-community-map .maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib{margin:0 4px 0 0;padding:0 4px;min-height:14px;font-size:10px;line-height:14px}
+.p-community-map .maplibregl-ctrl-attrib-inner{line-height:14px}
+.p-community-map .p-raster-credit{bottom:0;font-size:10px;line-height:14px;padding:0 4px}
