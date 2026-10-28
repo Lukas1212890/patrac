@@ -57,6 +57,8 @@ test('Worker community flow enforces real sessions, two public slots, one concur
   const rated=await(await request('/api/public/expeditions/'+code)).json();assert.equal(rated.reviews.average,5);assert.equal(rated.reviews.count,1);assert.equal(rated.reviews.items[0].nickname,'New nickname');assert.equal(rated.reviews.ownReview,null);
   assert.equal((await request(reviewPath,{action:'save',stars:5,comment:''},tokens.author)).status,403);
   assert.equal((await(await request(reviewPath)).json()).items.length,1);
+  const board=await(await request('/api/public/rankings',null,tokens.player)).json();assert.equal(board.ready,true);assert.equal(board.ratedExpeditions[0].code,code);assert.equal(board.activePlayers[0].nickname,'New nickname');assert.equal(board.myResults.items[0].rank,1);assert.equal(board.myResults.stats.completed,1);
+  assert.equal((await(await request('/api/public/rankings')).json()).myResults,null);assert.equal((await request('/api/public/results')).status,401);assert.equal((await(await request('/api/public/results',null,tokens.unpaid)).json()).items.length,0);
   assert.equal((await request('/api/expeditions/'+code,{action:'hide'},tokens.author)).status,200);assert.equal((await(await request('/api/public/expeditions')).json()).expeditions.length,0);assert.equal((await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).status,200);
   assert.equal((await(await request('/api/public/attempts',null,tokens.unpaid)).json()).attempts.length,0);
   const finalOwner=await(await request('/api/expeditions/'+code,null,tokens.author)).json();

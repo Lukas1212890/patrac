@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
+import {createRankingService} from '../worker/lib/communityRankings.mjs';
 import {createReviewService,validateReview} from '../worker/lib/publicReviews.mjs';
 import {createPublicService,communityReady} from '../worker/lib/publicExpeditions.mjs';
 import {validateExpedition} from '../worker/lib/patrac-engine.mjs';
@@ -117,4 +118,38 @@ test('reviews paginate without exposing account identifiers and tolerate a stage
  for(let i=0;i<23;i++){const id='reviewer'+i;f.native.prepare('INSERT INTO patrac_auth_user VALUES(?,?,?,1,NULL,?,?)').run(id,id,id+'@example.com',f.now(),f.now());f.native.prepare("INSERT INTO patrac_public_reviews VALUES(?,?,'test',5,?,?,?)").run('ABCDEFG',id,'Recenze '+i,f.now()+i,f.now()+i);}
  const first=await reviews.list('ABCDEFG','0');assert.equal(first.items.length,20);assert.equal(first.hasMore,true);const second=await reviews.list('ABCDEFG',String(first.nextOffset));assert.equal(second.items.length,3);assert.equal(second.hasMore,false);assert.equal(new Set([...first.items,...second.items].map(r=>r.nickname)).size,23);
  f.native.exec('DROP TABLE patrac_public_reviews');assert.equal((await f.api.detail('ABCDEFG',null)).reviews.ready,false);assert.equal((await f.api.listing()).expeditions.length,1);await assert.rejects(()=>reviews.save('ABCDEFG',f.users.alice,{action:'save',stars:5,comment:''}),e=>e.status===503);f.native.close();
+});
+
+test('community rankings compare public completed games, include penalties in own rank, and isolate private data',async()=>{
+ const f=fixture();await f.add('ABCDEFG');await f.add('HJKLMNP');await f.add('QRSTUVX',{...f.base,visibility:'private'});
+ const rankings=createRankingService({db:f.db,env:f.env}),reviews=createReviewService({db:f.db,env:f.env,now:f.now});
+ async function finish(code,user,duration,penalty=0){const attempt=await f.api.start(code,user,true);f.native.prepare("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',?,'$.index',2,'$.penaltyMs',?) WHERE id=(SELECT team_id FROM patrac_public_attempts WHERE code=? AND user_id=?)").run(attempt.attempt.startedAt+duration,penalty,code,user.id);}
+ await finish('ABCDEFG',f.users.alice,100000,120000);await finish('ABCDEFG',f.users.bob,180000);await finish('HJKLMNP',f.users.alice,100000);
+ // Legacy/malformed records attached to a private game must never enter any public ranking.
+ f.native.prepare('INSERT INTO patrac_teams VALUES(?,?,?,?,?,0)').run('private-team','QRSTUVX','private-token','private-name',JSON.stringify({startedAt:f.now(),finishedAt:f.now()+1,penaltyMs:0}));
+ f.native.prepare("INSERT INTO patrac_public_attempts VALUES(?,?,?,?,?,'test')").run('private-attempt','QRSTUVX','unpaid','private-team',f.now());
+ await reviews.save('ABCDEFG',f.users.alice,{action:'save',stars:5,comment:'Skvělé!'});await reviews.save('ABCDEFG',f.users.bob,{action:'save',stars:3,comment:''});await reviews.save('HJKLMNP',f.users.alice,{action:'save',stars:5,comment:''});
+ const publicView=await rankings.overview(null);assert.equal(publicView.myResults,null);assert.equal(publicView.ratedExpeditions[0].code,'HJKLMNP');assert.equal(publicView.ratedExpeditions[1].average,4);assert.equal(publicView.ratedExpeditions[1].count,2);
+ assert.equal(publicView.activePlayers[0].nickname,'alice');assert.equal(publicView.activePlayers[0].completed,2);assert.equal(publicView.activePlayers[1].completed,1);assert.equal(publicView.activePlayers[1].rank,2);
+ const own=await rankings.overview(f.users.alice);assert.equal(own.myResults.stats.completed,2);assert.equal(own.myResults.stats.activityRank,1);assert.ok(own.activePlayers.find(p=>p.isMe&&p.nickname==='alice'));
+ const slower=own.myResults.items.find(i=>i.code==='ABCDEFG');assert.equal(slower.rank,2);assert.equal(slower.finishers,2);assert.equal(slower.totalMs,220000);assert.equal(slower.penaltyMs,120000);assert.equal(slower.elapsedMs,100000);
+ const bob=await rankings.results(f.users.bob);assert.equal(bob.items.length,1);assert.equal(bob.items[0].rank,1);assert.equal(bob.items[0].totalMs,180000);
+ await assert.rejects(()=>rankings.results(null),e=>e.status===401);await assert.rejects(()=>rankings.results(f.users.alice,'-1'));await assert.rejects(()=>rankings.results(f.users.alice,'1.5'));
+ const safe=JSON.stringify(publicView);for(const field of ['user_id','@example.com','Secret riddle','secret answer','lat','lng','private-team','unpaid'])assert.equal(safe.includes(field),false,field);
+ f.native.exec("UPDATE patrac_expeditions SET payload=json_set(payload,'$.published',0) WHERE code='HJKLMNP'");
+ const hidden=await rankings.overview(f.users.alice);assert.equal(hidden.ratedExpeditions.length,1);assert.equal(hidden.myResults.stats.completed,2);assert.equal(hidden.myResults.items.find(i=>i.code==='HJKLMNP').hidden,true);assert.equal(hidden.activePlayers.length,2);assert.ok(hidden.activePlayers.every(p=>p.rank===1&&p.completed===1));
+ const live=await createRankingService({db:f.db,env:{PATRAC_STRIPE_MODE:'live'}}).overview(f.users.alice);assert.equal(live.activePlayers.length,0);assert.equal(live.ratedExpeditions.length,0);assert.equal(live.myResults.items.length,0);
+ f.native.exec('DROP TABLE patrac_public_reviews');assert.equal((await rankings.overview(null)).ratingsReady,false);f.native.close();
+});
+
+test('personal rankings paginate and show the real position beyond TOP 10; missing schema is staged safely',async()=>{
+ const f=fixture();await f.add('ABCDEFG');const rankings=createRankingService({db:f.db,env:f.env});
+ function attempt(code,user,id,duration){f.native.prepare('INSERT INTO patrac_teams VALUES(?,?,?,?,?,0)').run('team-'+id,code,'token-'+id,'key-'+id,JSON.stringify({startedAt:f.now(),finishedAt:f.now()+duration,penaltyMs:0}));f.native.prepare("INSERT INTO patrac_public_attempts VALUES(?,?,?,?,?,'test')").run('attempt-'+id,code,user,'team-'+id,f.now());}
+ for(let i=0;i<24;i++){const id='finisher-'+i;f.native.prepare('INSERT INTO patrac_auth_user VALUES(?,?,?,1,NULL,?,?)').run(id,id,id+'@example.com',f.now(),f.now());attempt('ABCDEFG',id,id,1000+i);}
+ attempt('ABCDEFG','alice','alice-first',999999);
+ const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+ for(let i=0;i<21;i++){const code='ZZZZZA'+alphabet[i];f.native.prepare('INSERT INTO patrac_expeditions VALUES(?,?,?,0)').run(code,'owner-'+code,JSON.stringify({...f.base,published:false}));f.native.prepare('INSERT INTO patrac_creator_games VALUES(?,?,?)').run(code,'author',f.now());attempt(code,'alice','alice-'+i,2000+i);}
+ const first=await rankings.results(f.users.alice);assert.equal(first.items.length,20);assert.equal(first.hasMore,true);const last=await rankings.results(f.users.alice,String(first.nextOffset));assert.equal(last.items.length,2);assert.equal(last.hasMore,false);assert.equal(new Set([...first.items,...last.items].map(i=>i.code)).size,22);
+ const actual=[...first.items,...last.items].find(i=>i.code==='ABCDEFG');assert.equal(actual.rank,25);assert.equal(actual.finishers,25);assert.equal(first.items[0].code,'ABCDEFG');assert.equal((await rankings.overview(null)).activePlayers.length,20);
+ f.native.exec('DROP TABLE patrac_public_attempts');assert.equal((await rankings.overview(null)).ready,false);f.native.close();
 });

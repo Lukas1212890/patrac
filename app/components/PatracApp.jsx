@@ -7,6 +7,7 @@ import CommunityMap from './CommunityMap';
 import PublicExpeditionDetail from './PublicExpeditionDetail';
 import CreatorHub from './CreatorHub';
 import PlayLibrary from './PlayLibrary';
+import CommunityRankings from './CommunityRankings';
 import {publicRequest} from '../lib/public-client';
 import {checkPrivateHistory,mergePrivateHistory} from '../lib/privateHistory.mjs';
 import PatracEditor from './PatracEditor';
@@ -46,7 +47,7 @@ export default function PatracApp() {
     return () => { active = false; };
   }, [account.user?.id]);
   useEffect(() => { if (account.recovery) setView('account'); }, [account.recovery]);
-  const [view, setView] = useState('home'), [publicCode,setPublicCode]=useState(null), [creationVisibility,setCreationVisibility]=useState('private'), [session, setSession] = useState(null), [data, setData] = useState(null), [saved, setSaved] = useState([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [online, setOnline] = useState(true), [clock, setClock] = useState(Date.now()), [editInitial, setEditInitial] = useState(null), [editVersion, setEditVersion] = useState(null), [code, setCode] = useState(''), [teamName, setTeamName] = useState(''), [joiningToken, setJoiningToken] = useState(null), [help, setHelp] = useState(false), [resumeOpen, setResumeOpen] = useState(false);
+  const [view, setView] = useState('home'), [publicCode,setPublicCode]=useState(null), [publicBack,setPublicBack]=useState('home'), [rankingTab,setRankingTab]=useState('expeditions'), [creationVisibility,setCreationVisibility]=useState('private'), [session, setSession] = useState(null), [data, setData] = useState(null), [saved, setSaved] = useState([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [online, setOnline] = useState(true), [clock, setClock] = useState(Date.now()), [editInitial, setEditInitial] = useState(null), [editVersion, setEditVersion] = useState(null), [code, setCode] = useState(''), [teamName, setTeamName] = useState(''), [joiningToken, setJoiningToken] = useState(null), [help, setHelp] = useState(false), [resumeOpen, setResumeOpen] = useState(false);
   const currentSession = useRef(null), offset = useRef(0), inFlight = useRef(false);
   const validatePrivateHistory=useCallback(async signal=>{
     const entries=remembered();
@@ -82,7 +83,7 @@ export default function PatracApp() {
   useEffect(() => { if (!session) return; refresh(); const interval = setInterval(() => { if (!document.hidden) refresh(); }, 5000); const resume = () => { if (!document.hidden) refresh(); }; window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume); window.addEventListener('pageshow', resume); return () => { clearInterval(interval); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); window.removeEventListener('pageshow', resume); }; }, [session?.code, session?.token, refresh]);
   function home() { currentSession.current = null; setSession(null); setData(null); setError(''); setView('home'); setResumeOpen(false); history.replaceState(null, '', '/'); }
   function navigate(next){currentSession.current=null;setSession(null);setData(null);setError('');setView(next);setResumeOpen(false);history.replaceState(null,'','/');}
-  function showPublic(code){navigate('public-detail');setPublicCode(code);history.replaceState(null,'','/?public='+code);}
+  function showPublic(code){setPublicBack(view==='rankings'?'rankings':'home');navigate('public-detail');setPublicCode(code);history.replaceState(null,'','/?public='+code);}
   async function action(input) {
     if (inFlight.current || !currentSession.current) return;
     if (!navigator.onLine) { setError('Jste offline. Po obnovení spojení můžete pokračovat. Čas stále běží.'); return; }
@@ -142,8 +143,9 @@ export default function PatracApp() {
     {!online && <div className="p-connection" role="status">Jste offline. Čas běží dál. Hra se připojí, jakmile bude signál.</div>}
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
     {view === 'home' && <CommunityMap onSelect={showPublic} onJoin={()=>navigate('join')}/>}
-    {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={home} onAccount={()=>navigate('account')} onStarted={enter}/>}
+    {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>navigate('account')} onStarted={enter}/>}
     {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team')} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
+    {view==='rankings'&&<CommunityRankings user={account.user} tab={rankingTab} onTabChange={setRankingTab} onSelect={showPublic} onAccount={()=>navigate('account')} onMap={home}/>}
     {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={openEditor} onGames={()=>navigate('library')}/>}
 
     {resumeOpen && <SavedGames sessions={availableGames} onEnter={enter} onRestore={restore} onClose={() => setResumeOpen(false)}/>}
@@ -154,7 +156,7 @@ export default function PatracApp() {
     {(view === 'owner' || view === 'player') && !data && <main className="p-narrow p-panel"><Compass className="p-big-icon"/><h1>Hledáme vaši výpravu…</h1><button className="p-secondary" onClick={refresh}>Obnovit</button></main>}
     {view === 'owner' && data && <Owner data={data} now={now} busy={busy} online={online} onAction={action} onDelete={deleteCurrentExpedition} onShowPublic={()=>showPublic(session.code)} onEdit={async () => { setBusy(true); try { const full = await request('/' + session.code + '?photos=1', session.token); setEditInitial(full.game); setEditVersion(full.version); setView('editor'); } catch (e) { setError(e.message); } finally { setBusy(false); } }} onBackup={() => download({ app: 'patrac', session }, `patrac-autor-${session.code}.json`)}/>}
     {view === 'player' && data && <Player data={data} now={now} busy={busy} online={online} onAction={action} onBackup={() => session.role==='public'?showPublic(session.code):download({ app: 'patrac', session }, `patrac-tym-${session.code}.json`)}/>}
-    {['home','library','creator','account','join','public-detail','removed'].includes(view)&&<nav className="p-bottom-nav" aria-label="Hlavní navigace">{[['home','Mapa',MapTab],['library','Moje hry',Footprints],['creator','Tvořit',Plus],['account','Profil',UserRound]].map(([key,label,Icon])=><button key={key} type="button" className={(view===key||(key==='home'&&view==='public-detail'))?'active':''} aria-current={(view===key||(key==='home'&&view==='public-detail'))?'page':undefined} onClick={()=>navigate(key)}><Icon size={22}/><span>{label}</span></button>)}</nav>}
+    {['home','library','creator','account','join','public-detail','removed','rankings'].includes(view)&&<nav className="p-bottom-nav" aria-label="Hlavní navigace">{[['home','Mapa',MapTab],['library','Moje hry',Footprints],['creator','Tvořit',Plus],['rankings','Žebříčky',Trophy]].map(([key,label,Icon])=><button key={key} type="button" className={(view===key||(key===publicBack&&view==='public-detail'))?'active':''} aria-current={(view===key||(key===publicBack&&view==='public-detail'))?'page':undefined} onClick={()=>navigate(key)}><Icon size={22}/><span>{label}</span></button>)}</nav>}
     {view === 'demo' && <Demo onBack={home}/>}
     {help && <div className="p-modal-backdrop"><section className="p-modal" role="dialog" aria-modal="true" aria-labelledby="p-help-title"><span className="p-kicker">JAK SE HRAJE</span><h2 id="p-help-title">Od první stopy až k pokladu.</h2><ol><li>Organizátor vybere místa a připraví hádanky.</li><li>Týmy se připojí kódem a čekají na společný start.</li><li>GPS na místě odemkne hádanku. Správná odpověď odhalí další cíl.</li><li>V závodu se k času přičítají použité nápovědy. V honu za pokladem nápovědy nejsou.</li></ol><p className="p-small">Při externí navigaci se na místě vraťte do Pátrače. Pro ověření příchodu potřebujete polohu a připojení. Za pohybu sledujte okolí a držte se přístupných cest.</p><button className="p-primary" onClick={() => setHelp(false)}>Rozumím, jdeme na to</button></section></div>}
   </div>;

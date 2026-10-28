@@ -111,3 +111,8 @@ Základní mapa Pátrače používá OpenStreetMap Standard (`https://tile.opens
 ### Uložené soukromé výpravy
 
 Moje hraní ověřuje lokálně uložené týmové přístupy lehkým autentizovaným `GET /api/expeditions/:code?summary=1`, který nevrací hádanky, fotografie ani události. Při potvrzeném HTTP 404/410 odstraní jen odpovídající uložený přístup, včetně klíče, a zachová novější či jiné relace. Timeouty, offline stav, HTTP 401/403/5xx a neověřená role přístupy nemažou. Kontrola běží při otevření přehledu, ručním obnovení a návratu internetu; nejvýše tři požadavky současně. Smazání z lokální historie není smazání existující výpravy ani týmu na serveru.
+
+
+### Komunitní žebříčky
+
+Spodní lišta obsahuje Mapa, Moje hry, Tvořit a Žebříčky. Profil je dostupný nahoře. `GET /api/public/rankings` vrací TOP 20 hodnocených právě zveřejněných výprav (průměr hvězdiček, při shodě počet hodnocení), TOP 20 hráčů podle dokončených právě zveřejněných veřejných výprav a vlastní výsledky přihlášeného hráče. Při stejném počtu dokončení mají hráči stejné pořadí. Vlastní výsledky mají přesné pořadí v dané výpravě včetně výsledků mimo TOP 10, počet dokončených pokusů, čas hry, penalizace a výsledný čas. Časy různých výprav se nesčítají. Osobní seznam lze stránkovat po 20 přes `GET /api/public/results?offset=20`. Skryté výpravy se nezapočítávají do veřejného přehledu, ale majiteli pokusu zůstanou v osobní historii. Testovací a ostré prostředí jsou oddělené. Odpovědi neobsahují e-maily, ID cizích účtů, přístupové klíče ani souřadnice dalších stanovišť. Není potřeba nová migrace ani služba.
