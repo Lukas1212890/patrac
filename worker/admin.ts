@@ -1,5 +1,6 @@
 import {expireAttempts} from './lib/expiredAttempts.mjs';
-import { env } from 'cloudflare:workers';
+import { env,rawEnv } from './runtime';
+import {runtimeModeStatus,changeRuntimeMode} from './lib/runtimeModeAdmin.mjs';
 import { accountAuth } from './auth';
 import { billingEnvironment } from './lib/billing.mjs';
 import { createAdminService, AdminError } from './lib/adminService.mjs';
@@ -28,6 +29,11 @@ async function readAdminBody(request: Request) {
 export async function adminRequest(request: Request) {
   try {
     const url = new URL(request.url), api = service();
+    if(url.pathname==='/api/admin/runtime-mode'){
+      const actor=(await api.session(request,request.method==='POST')).user;
+      if(request.method==='GET')return Response.json(await runtimeModeStatus(env.DB,rawEnv));
+      if(request.method==='POST')return Response.json(await changeRuntimeMode({db:env.DB,raw:rawEnv,actor,input:await readAdminBody(request)}));
+    }
     if (url.pathname.startsWith('/api/admin/users/') || (url.pathname==='/api/admin/users' && request.method==='POST')) { await api.session(request); await expireAttempts(env.DB); }
     if (request.method === 'GET' && url.pathname === '/api/admin/session') return Response.json(await api.session(request));
     if (request.method === 'GET' && url.pathname === '/api/admin/users') return Response.json(await api.list(request,{q:url.searchParams.get('q')||'',page:url.searchParams.get('page')||'0'}));

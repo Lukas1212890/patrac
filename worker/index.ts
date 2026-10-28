@@ -1,6 +1,6 @@
 import {sweepDeletedExpeditions} from './lib/expeditionLifecycle.mjs';
 import {expireAttempts} from './lib/expiredAttempts.mjs';
-import { env } from 'cloudflare:workers';
+import { env, withRuntime } from './runtime';
 import { allowedOrigin } from './origin.mjs';
 import { createExpedition, viewExpedition, changeExpedition, errorResponse } from './lib/patrac-server';
 import { adminRequest } from './admin';
@@ -10,7 +10,7 @@ import { accountAuth } from './auth';
 import * as account from './account';
 import * as config from './config';
 import {createCreatorRewards} from './lib/creatorRewards.mjs';
-export default {
+const handler = {
   async scheduled(){await expireAttempts(env.DB);await sweepDeletedExpeditions(env.DB,env.BUCKET);await createCreatorRewards({db:env.DB,env}).sweep();},
   async fetch(request: Request): Promise<Response> {
     const origin = request.headers.get('origin');
@@ -57,3 +57,5 @@ export default {
     return new Response(response.body, { status: response.status, headers: merged });
   }
 };
+
+export default {fetch:(request:Request)=>withRuntime(()=>handler.fetch(request)),scheduled:()=>withRuntime(()=>handler.scheduled())};

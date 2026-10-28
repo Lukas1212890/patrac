@@ -44,11 +44,12 @@ export function createBilling({db,env,fetcher=fetch,now=Date.now}) {
   return {...access,enabled:env.PATRAC_BILLING_ENABLED==='true',available:available(),environment,plans:PLANS.map(p=>({months:p.months,amount:p.amount})),orders:orders.results};
  }
  async function checkout(user,input) {
+  if(input.environment&&input.environment!==environment)throw new GameError('Režim hry se změnil. Obnovte profil před platbou.',409);
   if(!available())throw new GameError('Platby se právě připravují.',503);
   const plan=PLANS.find(p=>p.months===input.months);
   if(!plan||typeof input.requestKey!=='string'||!/^[-a-zA-Z0-9]{16,80}$/.test(input.requestKey))throw new GameError('Neplatná varianta přístupu.');
   // Live prices must be explicitly supplied; sandbox IDs can never charge real money.
-  const price=environment==='test'?plan.price:env['STRIPE_PRICE_'+plan.months];
+  const price=env['STRIPE_PRICE_'+plan.months]||(environment==='test'?plan.price:null);
   if(!/^price_[A-Za-z0-9]+$/.test(price||''))throw new GameError('Cena není nastavená.',503);
   let order=await db.prepare('SELECT * FROM patrac_orders WHERE user_id=? AND environment=? AND request_key=?').bind(user.id,environment,input.requestKey).first();
   if(order&&order.months!==plan.months)throw new GameError('Opakovaný požadavek má jinou variantu.',409);

@@ -1,5 +1,5 @@
 import { APIError } from 'better-auth/api';
-import { env } from 'cloudflare:workers';
+import { env } from './runtime';
 export async function sendAccountMail(to: string, subject: string, text: string) {
   if (env.PATRAC_REGISTRATION_READY !== 'true') throw Error('Mail delivery is not enabled');
   const url = new URL(env.PATRAC_MAIL_RELAY_URL);

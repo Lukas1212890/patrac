@@ -1,4 +1,4 @@
-import {env} from 'cloudflare:workers';
+import {env} from './runtime';
 import {creatorIdentity} from './lib/creator-server';
 import {createPublicService} from './lib/publicExpeditions.mjs';
 import {createReviewService} from './lib/publicReviews.mjs';

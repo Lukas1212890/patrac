@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { env } from './runtime';
 import { createAccountAuth } from './lib/accountAuth.mjs';
 import { sendAccountMail } from './mail';
 let cached: ReturnType<typeof createAccountAuth> | undefined;

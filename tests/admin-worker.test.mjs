@@ -40,7 +40,13 @@ test('Worker HTTP admin routes enforce origins and real session roles before exp
     assert.equal((await request('/api/admin/users',{...deletion,reason:''},admin)).status,400);
     assert.equal((await request('/api/account/notices')).status,401);
     assert.equal((await(await request('/api/admin/users/regular',null,admin)).json()).games[0].version,0);
+    assert.equal((await request('/api/admin/runtime-mode',null,regular)).status,403);
+    assert.equal((await request('/api/admin/runtime-mode',{mode:'live',version:0,confirm:true},regular)).status,403);
+    const runtimeState=await request('/api/admin/runtime-mode',null,admin);assert.equal(runtimeState.status,200);const modeState=await runtimeState.json();assert.equal(modeState.ready,false);assert.equal(modeState.live.configured,false);assert.equal(JSON.stringify(modeState).includes('sk_live_'),false);
     const deleted=await request('/api/admin/users',deletion,admin);assert.equal(deleted.status,200,await deleted.clone().text());
+    assert.ok(await bucket.get('hints/ABCDEFG/photo'));
+    await db.prepare("UPDATE patrac_expeditions SET payload=json_set(payload,'$.deleteAt',?) WHERE code=?").bind(Date.now()-1,'ABCDEFG').run();
+    await request('/api/account',null,regular);
     const noticeResponse=await request('/api/account/notices',null,regular);assert.equal(noticeResponse.status,200);assert.equal(noticeResponse.headers.get('cache-control'),'no-store, private');const notices=await noticeResponse.json();assert.equal(notices.notices.length,1);assert.equal(notices.notices[0].reason,deletion.reason);assert.equal(notices.notices[0].name,'Testovací výprava');assert.equal(JSON.stringify(notices).includes('admin@example.com'),false);
     assert.equal((await(await request('/api/account/notices?userId=regular',null,admin)).json()).notices.length,0);
     assert.equal((await request('/api/admin/users',deletion,admin)).status,200);assert.equal((await(await request('/api/account/notices',null,regular)).json()).notices.length,1);

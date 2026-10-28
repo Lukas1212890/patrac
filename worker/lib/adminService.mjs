@@ -82,7 +82,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
     return {ok:true,message:'Přístup byl prodloužen o '+input.months+' měsíců. Platba se tímto nevytváří.'};
   }
   return {
-    async session(request) { return { user: await requireAdmin(request) }; },
+    async session(request, fresh=false) { return { user: await requireAdmin(request,fresh) }; },
     async list(request, query = {}) {
       await requireAdmin(request);
       const q = String(query.q || '').trim().slice(0, 120), page = Number(query.page || 0);

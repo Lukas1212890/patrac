@@ -61,6 +61,13 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
   const signature=Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(time+'.'+raw))).toString('hex');
   const hook=await mf.dispatchFetch('http://localhost:8790/api/billing/webhook',{method:'POST',headers:{'Stripe-Signature':`t=${time},v1=${signature}`},body:raw});assert.equal(hook.status,200);
+  for(const sql of readFileSync('drizzle/0011_runtime_mode.sql','utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
+  await db.prepare("UPDATE patrac_runtime_mode SET mode='live',version=version+1 WHERE id=1").run();
+  assert.equal((await(await request('/api/account/config')).json()).environment,'live');
+  assert.equal((await request('/api/billing/checkout',{months:3,requestKey:crypto.randomUUID()},token)).status,409);
+  const lateHook=await mf.dispatchFetch('http://localhost:8790/api/billing/webhook',{method:'POST',headers:{'Stripe-Signature':`t=${time},v1=${signature}`},body:raw});assert.equal(lateHook.status,200);
+  await db.prepare("UPDATE patrac_runtime_mode SET mode='test',version=version+1 WHERE id=1").run();
+
   const grant={action:'access',id:'user',environment:'test',months:3,reason:'Native Worker test grant',version:0,requestKey:crypto.randomUUID()};
   assert.equal((await request('/api/admin/users',grant,token)).status,403);
   await db.prepare('INSERT INTO patrac_admin_accounts VALUES(?,?)').bind('user',Date.now()).run();
@@ -102,6 +109,9 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   assert.ok(await bucket.head('hints/HJKLMNP/old-orphan'));
   assert.equal((await request('/api/expeditions/HJKLMNP',{action:'abandon',confirm:true},players.late)).status,200);
   const deleted=await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'HJKLMNP'},token);assert.equal(deleted.status,200,await deleted.clone().text());
+    assert.ok(await bucket.head('hints/HJKLMNP/old-orphan'));
+    await db.prepare("UPDATE patrac_expeditions SET payload=json_set(payload,'$.deleteAt',?) WHERE code=?").bind(Date.now()-1,'HJKLMNP').run();
+    await request('/api/account',null,token);
   assert.equal(await bucket.head('hints/HJKLMNP/old-orphan'),null);assert.ok(await bucket.head('hints/ABCDEFG/keep'));
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_teams WHERE code=?').bind('HJKLMNP').first()).n,0);
   assert.equal((await(await request('/api/account',null,token)).json()).expeditionCount,2);

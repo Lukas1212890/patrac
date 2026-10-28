@@ -8,7 +8,7 @@ import { creatorIdentity } from './creator-server';
 import { requirePaidAccess } from './billing.mjs';
 import {creatorLimits} from './creatorLimits.mjs';
 import { expeditionCount, reserveExpedition, removeExpedition } from './expeditionLifecycle.mjs';
-import { env } from 'cloudflare:workers';
+import { env } from '../runtime';
 import { GameError, validateExpedition, newTeam, applyAction, teamProjection, stationTimings, score } from './patrac-engine.mjs';
 type Row = { code: string; owner_hash: string; payload: string; version: number };
 const headers = { 'Cache-Control': 'no-store, private', 'Vary': 'Authorization, X-Patrac-Account', 'X-Content-Type-Options': 'nosniff' };

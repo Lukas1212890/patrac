@@ -25,7 +25,7 @@ export default function CreatorBilling({userId}){
  },[userId]);
  async function buy(months){setBusy(true);setError('');try{
   keys.current[months] ||= crypto.randomUUID();
-  const result=await billingRequest('/checkout',{months,requestKey:keys.current[months]});
+  const result=await billingRequest('/checkout',{months,environment:state.environment,requestKey:keys.current[months]});
   const url=new URL(result.url);if(url.origin!=='https://checkout.stripe.com')throw Error('Neplatná adresa platební brány.');
   location.assign(url.href);
  }catch(e){setError(e.message);if(e.status===409)delete keys.current[months];setBusy(false);}}
