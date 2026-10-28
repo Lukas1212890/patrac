@@ -1,4 +1,5 @@
 'use client';
+import {TestModeNotice} from './RuntimeModeNotice';
 import {useEffect,useRef,useState} from 'react';
 import {creatorAccessToken} from '../lib/creator-client';
 import {apiUrl} from '../lib/apiUrl.mjs';
@@ -33,7 +34,7 @@ export default function CreatorBilling({userId}){
  {error&&<p className="p-alert" role="alert">{error}</p>}
  {!state&&!error&&<p role="status">Načítám přístup…</p>}
  {state&&<>
- {state.environment==='test'&&state.enabled&&<p className="p-note">Testovací platby — skutečné peníze se nestrhávají.</p>}
+ {state.enabled&&<TestModeNotice environment={state.environment}><p className="p-note">Testovací platby — skutečné peníze se nestrhávají.</p></TestModeNotice>}
  <p>{state.active?<>Přístup aktivní do <strong>{date(state.expiresAt)}</strong>.</>:state.expiresAt?<>Přístup vypršel {date(state.expiresAt)}.</>:'Zatím nemáte aktivní placený přístup.'}</p>
  {returning==='success'&&<p role="status">Platba byla dokončena v bráně. Aktivace se zobrazí po potvrzení serverem. Pokud ještě chybí, obnovte stav za chvíli.</p>}
  {returning==='cancel'&&<p>Platbu jste nedokončili. Můžete vybrat tarif znovu.</p>}

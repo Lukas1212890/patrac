@@ -13,5 +13,5 @@ export const metadata: Metadata = {
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#eaf2ff" };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
- return <html lang="cs"><head><link rel="stylesheet" href="/vendor/maplibre-gl.css"/></head><body><PwaGestureGuard/><RuntimeModeNotice/>{children}</body></html>;
+ return <html lang="cs"><head><link rel="stylesheet" href="/vendor/maplibre-gl.css"/></head><body><PwaGestureGuard/><RuntimeModeNotice>{children}</RuntimeModeNotice></body></html>;
 }
