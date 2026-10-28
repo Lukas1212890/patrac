@@ -66,3 +66,7 @@ Přechod do ostrého provozu je samostatný krok: ověřený vlastní Stripe ú�
 ### Ruční přidělení přístupu v administraci
 
 V detailu účtu v `/admin` je stav přístupu v aktuálním serverovém prostředí a posledních 50 objednávek. Správce může přidat 3/6/12 měsíců bez platby s povinným důvodem. Přidělení vyžaduje skutečnou správcovskou roli a přihlášení mladší 15 minut; testovací a ostré prostředí se nesmí měnit údajem z prohlížeče. D1 transakce zapisuje platnost a audit společně, kontroluje revizi proti souběžné platbě či jinému správci a identifikátor opakovaného požadavku zabraňuje dvojímu prodloužení. Ruční přidělení nevytváří fiktivní objednávku a neposílá e-mail. Nevyžaduje novou migraci nad již zavedeným schématem `0004_billing.sql`.
+
+## Dokončení stanoviště v editoru
+
+Pod nápovědami je „Uložit stanoviště“. Zkontroluje jen aktuální stanoviště, u nové výpravy uloží koncept do zařízení a sbalí formulář k tlačítku „Přidat další stanoviště“. Existující stanoviště lze znovu otevřít v trase. U již vytvořené výpravy jde o přípravu změn v editoru; teprve závěrečné „Uložit změny“ zapisuje celou výpravu na server. „Vytvořit výpravu“ zůstává závěrečným krokem nové výpravy. Při nedostupném místním úložišti editor zobrazí upozornění a umožní dokončení bez zavření stránky.
