@@ -1,15 +1,16 @@
 import { GameError } from './patrac-engine.mjs';
+import {limitsReady,limitSQL} from './creatorLimits.mjs';
 export const EXPEDITION_LIMIT=3;
 export const PUBLIC_EXPEDITION_LIMIT=2;
 export const expeditionCountSQL="SELECT COUNT(*) AS total FROM patrac_creator_games c JOIN patrac_expeditions e ON e.code=c.code WHERE c.creator_id=? AND COALESCE(json_extract(e.payload,'$.visibility'),'private')='private'";
 export const publicExpeditionCountSQL=expeditionCountSQL.replace("='private'","='public'");
 export async function expeditionCount(db,userId,visibility='private'){return (await db.prepare(visibility==='public'?publicExpeditionCountSQL:expeditionCountSQL).bind(userId).first()).total;}
 export async function reserveExpedition(db,{code,ownerHash,payload,userId,now}){
- const visibility=JSON.parse(payload).visibility==='public'?'public':'private',countSQL=visibility==='public'?publicExpeditionCountSQL:expeditionCountSQL,limit=visibility==='public'?PUBLIC_EXPEDITION_LIMIT:EXPEDITION_LIMIT;
+ const visibility=JSON.parse(payload).visibility==='public'?'public':'private',countSQL=visibility==='public'?publicExpeditionCountSQL:expeditionCountSQL,fallback=visibility==='public'?PUBLIC_EXPEDITION_LIMIT:EXPEDITION_LIMIT,custom=await limitsReady(db),limit=custom?limitSQL(visibility):'?';
  // A D1 batch is one transaction: parallel requests cannot both claim the final slot.
  return db.batch([
   db.prepare(`INSERT OR IGNORE INTO patrac_expeditions(code,owner_hash,payload,version)
-   SELECT ?,?,?,0 WHERE (${countSQL})<?`).bind(code,ownerHash,payload,userId,limit),
+   SELECT ?,?,?,0 WHERE (${countSQL})<${limit}`).bind(code,ownerHash,payload,userId,custom?userId:fallback),
   db.prepare('INSERT OR IGNORE INTO patrac_creator_games(code,creator_id,linked_at) SELECT code,?,? FROM patrac_expeditions WHERE code=? AND owner_hash=?')
    .bind(userId,now,code,ownerHash),
  ]);

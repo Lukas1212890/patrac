@@ -38,8 +38,8 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
   const rows=await db.prepare(`SELECT ${CARD} ${BASE} WHERE ${PUBLIC} AND json_extract(e.payload,'$.stations[0].lng') BETWEEN ? AND ? AND json_extract(e.payload,'$.stations[0].lat') BETWEEN ? AND ? ORDER BY e.code LIMIT 151`).bind(box[0],box[2],box[1],box[3]).all();
   const expeditions=rows.results.slice(0,150).map(safeCard);
   if(expeditions.length&&await reviewsReady(db)){
-   const ratings=await db.prepare(`SELECT code,COUNT(*) AS count,ROUND(AVG(stars),1) AS average FROM patrac_public_reviews WHERE environment=? AND code IN (${expeditions.map(()=>'?').join(',')}) GROUP BY code`).bind(environment,...expeditions.map(e=>e.code)).all();
-   const byCode=new Map(ratings.results.map(r=>[r.code,{count:r.count,average:r.average}]));for(const item of expeditions)item.rating=byCode.get(item.code)||{count:0,average:null};
+   const ratings=[];for(let offset=0;offset<expeditions.length;offset+=90){const group=expeditions.slice(offset,offset+90);const page=await db.prepare(`SELECT code,COUNT(*) AS count,ROUND(AVG(stars),1) AS average FROM patrac_public_reviews WHERE environment=? AND code IN (${group.map(()=>'?').join(',')}) GROUP BY code`).bind(environment,...group.map(e=>e.code)).all();ratings.push(...page.results);}
+   const byCode=new Map(ratings.map(r=>[r.code,{count:r.count,average:r.average}]));for(const item of expeditions)item.rating=byCode.get(item.code)||{count:0,average:null};
   }
   return{ready:true,expeditions,hasMore:rows.results.length>150};
  }

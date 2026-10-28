@@ -3,6 +3,7 @@ import {billingEnvironment} from './billing.mjs';
 import {communityReady} from './publicExpeditions.mjs';
 import {reviewsReady} from './publicReviews.mjs';
 import {createCreatorRewards,creatorRewardsReady} from './creatorRewards.mjs';
+import {limitsReady} from './creatorLimits.mjs';
 const VISIBLE="json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.status')='running' AND json_extract(e.payload,'$.published')=1";
 const FINISHED=`WITH finished AS (
  SELECT a.id,a.code,a.user_id,json_extract(e.payload,'$.name') AS name,
@@ -40,16 +41,16 @@ export function createRankingService({db,env}){
  async function authored(user,ratingsReady){
   const rows=await db.prepare("SELECT e.code,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.status') AS status,json_extract(e.payload,'$.published') AS published FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE c.creator_id=? AND json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.status')<>'deleting' ORDER BY c.linked_at DESC,e.code").bind(user.id).all();
   if(!rows.results.length)return[];
-  const codes=rows.results.map(r=>r.code),slots=codes.map(()=>'?').join(',');
-  const finishers=await db.prepare(FINISHED+` SELECT code,COUNT(*) AS completed FROM finished WHERE code IN (${slots}) GROUP BY code`).bind(environment,...codes).all();
+  const owned='SELECT code FROM patrac_creator_games WHERE creator_id=?';
+  const finishers=await db.prepare(FINISHED+` SELECT code,COUNT(*) AS completed FROM finished WHERE code IN (${owned}) GROUP BY code`).bind(environment,user.id).all();
   let ratings=[],positions=[];
   if(ratingsReady){
-   ratings=(await db.prepare(`SELECT code,COUNT(*) AS count,ROUND(AVG(stars),1) AS average FROM patrac_public_reviews WHERE environment=? AND code IN (${slots}) GROUP BY code`).bind(environment,...codes).all()).results;
+   ratings=(await db.prepare(`SELECT code,COUNT(*) AS count,ROUND(AVG(stars),1) AS average FROM patrac_public_reviews WHERE environment=? AND code IN (${owned}) GROUP BY code`).bind(environment,user.id).all()).results;
    positions=(await db.prepare(`WITH ranked AS (
     SELECT e.code,ROW_NUMBER() OVER(ORDER BY AVG(r.stars) DESC,COUNT(*) DESC,e.code ASC) AS rank
     FROM patrac_public_reviews r JOIN patrac_expeditions e ON e.code=r.code JOIN patrac_creator_games c ON c.code=e.code
     WHERE r.environment=? AND ${VISIBLE} GROUP BY e.code
-   ) SELECT code,rank FROM ranked WHERE code IN (${slots})`).bind(environment,...codes).all()).results;
+   ) SELECT code,rank FROM ranked WHERE code IN (${owned})`).bind(environment,user.id).all()).results;
   }
   return rows.results.map(row=>({...row,published:!!row.published,completed:finishers.results.find(r=>r.code===row.code)?.completed||0,
    rating:ratings.find(r=>r.code===row.code)||{count:0,average:null},rank:positions.find(r=>r.code===row.code)?.rank??null}));
@@ -68,7 +69,7 @@ export function createRankingService({db,env}){
   const players=await db.prepare(activityCTE+` SELECT substr(u.name,1,60) AS nickname,r.completed,r.rank,
    CASE WHEN r.user_id=? THEN 1 ELSE 0 END AS isMe FROM ranked r JOIN patrac_auth_user u ON u.id=r.user_id
    ORDER BY r.completed DESC,u.name COLLATE NOCASE ASC,r.user_id ASC LIMIT 20`).bind(environment,user?.id||'').all();
-  return{ready:true,environment,ratingsReady,rewardsReady:await creatorRewardsReady(db),ratedExpeditions,activePlayers:players.results.map(r=>({...r,isMe:!!r.isMe})),
+  return{ready:true,environment,ratingsReady,limitsReady:await limitsReady(db),rewardsReady:await creatorRewardsReady(db),ratedExpeditions,activePlayers:players.results.map(r=>({...r,isMe:!!r.isMe})),
    creatorRewards:user?await createCreatorRewards({db,env}).summary(user.id):null,
    myExpeditions:user?await authored(user,ratingsReady):null,
    myResults:user?{...await results(user),stats:await ownStats(user)}:null};

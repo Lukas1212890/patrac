@@ -132,3 +132,10 @@ Před tvorbou veřejné výpravy se otevře vysvětlení s povinným zaškrtnut�
 V `/admin` lze v detailu účtu u každé výpravy zvolit Smazat výpravu. Vyžaduje to čerstvé správcovské přihlášení (15 minut), důvod 5–500 znaků a opsání kódu. Před potvrzením je náhled skutečné komponenty oznámení pro tvůrce. Backend ověřuje vlastnictví vůči vybranému účtu, aktuální revizi a správcovskou roli. Ověřená transakce současně rezervuje audit s důvodem a označí výpravu pro smazání. Úklid fotografií používá stejnou cestu jako ruční smazání tvůrcem; přerušení lze dokončit pod stejným klíčem a důvodem.
 
 Odstranění dat a dokončení auditu jsou v jedné transakci. Teprve `success` zpřístupní oznámení. Audit zůstává po smazání výpravy a drží důvod, název/kód a správce; odměny a již přiznaný čas se nemažou. `GET /api/account/notices` vrací pouze přihlášenému tvůrci posledních 20 jeho oznámení, s názvem, kódem, důvodem a datem, bez identity nebo e-mailu správce. V aplikaci se ukáže horní oznámení a trvalá historie v Moje hry. Rozumím skryje horní oznámení jen v daném zařízení. Nová zpráva obnoví přehled výprav, kontrola běží při přihlášení, návratu do aplikace a každou minutu na viditelné stránce. Není potřeba nová databázová migrace. Testy používají oddělené dočasné databáze a R2, nikoli skutečné výpravy uživatele.
+
+
+### Individuální limity účtu
+
+Po migraci `drizzle/0008_creator_limits.sql` může správce v detailu účtu nastavovat soukromé a veřejné výpravy samostatně v rozsahu 0–1000. Výchozí hodnoty jsou 3 / 2, platí pro účty bez nastavení i před migrací. Hodnota 0 zakazuje pouze novou tvorbu daného typu. Snížení nesmaže, neskryje ani nevypne existující výpravy a neruší placený přístup. Vyšší limit nenahrazuje předplatné.
+
+Změna vyžaduje čerstvé přihlášení správce, důvod, aktuální revizi a idempotentní klíč. Audit i nastavení se mění v jedné transakci. Tlačítko výchozích hodnot předvyplní 3 / 2, změna se uloží až potvrzením s důvodem. Vytvoření i přiřazení starší výpravy používají limit přímo uvnitř SQL zápisu, takže neprojde ani souběžný požadavek nad limit nebo ručně podvržený údaj klienta. Přehled účtu, Moje hry a Tvořit čtou aktuální limity ze serveru.

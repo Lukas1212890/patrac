@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS patrac_creator_limits (
+ user_id TEXT PRIMARY KEY NOT NULL REFERENCES patrac_auth_user(id) ON DELETE CASCADE,
+ private_limit INTEGER NOT NULL DEFAULT 3 CHECK(private_limit BETWEEN 0 AND 1000),
+ public_limit INTEGER NOT NULL DEFAULT 2 CHECK(public_limit BETWEEN 0 AND 1000),
+ version INTEGER NOT NULL DEFAULT 0,
+ updated_at INTEGER NOT NULL
+);

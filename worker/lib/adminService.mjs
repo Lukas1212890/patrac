@@ -1,5 +1,6 @@
 import { addMonths } from './billing.mjs';
 import {deleteAsAdmin} from './adminExpeditionDeletion.mjs';
+import {creatorLimits,changeCreatorLimits} from './creatorLimits.mjs';
 export class AdminError extends Error {
   constructor(message, status = 400, code = 'ADMIN_ERROR') { super(message); this.status = status; this.code = code; }
 }
@@ -94,10 +95,11 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
         FROM patrac_creator_games g JOIN patrac_expeditions e ON e.code = g.code LEFT JOIN patrac_admin_audit a ON a.id=json_extract(e.payload,'$.adminDeletion') WHERE g.creator_id = ? ORDER BY g.linked_at DESC LIMIT 100`).bind(id).all();
       const audit = await db.prepare(`SELECT a.action,a.status,a.created_at,a.details,u.email AS actor FROM patrac_admin_audit a
         LEFT JOIN patrac_auth_user u ON u.id = a.actor_id WHERE a.target_id = ? ORDER BY a.created_at DESC LIMIT 20`).bind(id).all();
-      return { user: safeUser(user), games: games.results.map(({deleteOperation,deletionDetails,...game})=>({...game,...(deleteOperation&&deletionDetails?{deletion:{requestKey:deleteOperation.replace(/^admin-delete_/,''),reason:JSON.parse(deletionDetails).reason}}:{})})), audit: audit.results, billing: await billingDetail(id) };
+      return { user: safeUser(user), games: games.results.map(({deleteOperation,deletionDetails,...game})=>({...game,...(deleteOperation&&deletionDetails?{deletion:{requestKey:deleteOperation.replace(/^admin-delete_/,''),reason:JSON.parse(deletionDetails).reason}}:{})})), audit: audit.results, limits:await creatorLimits(db,id), billing: await billingDetail(id) };
     },
     async change(request, input) {
       const actor = await requireAdmin(request, true), user = await target(input.id), action = input.action;
+      if (action === 'limits') return changeCreatorLimits({db,actor,user,input,now,ErrorType:AdminError});
       if (action === 'access') return grantAccess(actor,user,input);
       if (action === 'delete-expedition') return deleteAsAdmin({db,bucket,actor,user,input,now,ErrorType:AdminError});
       if (!['update','reset','verify','revoke'].includes(action)) throw new AdminError('Neznámá akce.');

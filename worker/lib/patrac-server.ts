@@ -3,7 +3,8 @@ import {communityReady,validatePublicInfo,requirePublicAccess} from './publicExp
 import { allowedOrigin } from '../origin.mjs';
 import { creatorIdentity } from './creator-server';
 import { requirePaidAccess } from './billing.mjs';
-import { EXPEDITION_LIMIT, PUBLIC_EXPEDITION_LIMIT, expeditionCount, reserveExpedition, removeExpedition } from './expeditionLifecycle.mjs';
+import {creatorLimits} from './creatorLimits.mjs';
+import { expeditionCount, reserveExpedition, removeExpedition } from './expeditionLifecycle.mjs';
 import { env } from 'cloudflare:workers';
 import { GameError, validateExpedition, newTeam, applyAction, teamProjection, stationTimings, score, normalizeAnswer } from './patrac-engine.mjs';
 type Row = { code: string; owner_hash: string; payload: string; version: number };
@@ -64,8 +65,9 @@ export async function createExpedition(request: Request) {
   if(!['private','public'].includes(visibility))throw new GameError('Vyberte soukromou nebo veřejnou výpravu.');
   if(visibility==='public')await requirePublicAccess(db(),env,account!.id);
   if(visibility==='public'&&!await communityReady(db()))throw new GameError('Veřejné výpravy se právě připravují.',503);
-  const limit=visibility==='public'?PUBLIC_EXPEDITION_LIMIT:EXPEDITION_LIMIT;
-  if (await expeditionCount(db(), account!.id,visibility) >= limit) throw new GameError(visibility==='public'?'Na účtu můžete mít 2 veřejné výpravy. Pro další nejprve některou smažte.':'Na účtu můžete mít 3 soukromé výpravy. Pro další nejprve některou smažte.',409);
+  const limits=await creatorLimits(db(),account!.id),limit=visibility==='public'?limits.public:limits.private;
+  const limitMessage=(n:number)=>n===0?'Tvorba nových '+(visibility==='public'?'veřejných':'soukromých')+' výprav je pro tento účet vypnutá.':'Limit '+(visibility==='public'?'veřejných':'soukromých')+' výprav na tomto účtu je '+n+'. Pro další nejprve některou smažte.';
+  if (await expeditionCount(db(), account!.id,visibility) >= limit) throw new GameError(limitMessage(limit),409);
   const config = {...validateExpedition(input),visibility,...(visibility==='public'?{publicInfo:validatePublicInfo(input.publicInfo),published:false}:{})};
   if(visibility==='public'&&config.mode!=='race')throw new GameError('Veřejné výpravy se hrají výhradně na čas.');
   const ownerToken = token(), ownerHash = await hash(ownerToken);
@@ -78,7 +80,8 @@ export async function createExpedition(request: Request) {
     const results = await reserveExpedition(db(), {code, ownerHash, payload:JSON.stringify(stored), userId:account!.id, now:Date.now()});
     if (results[1].meta.changes) return json({ code, ownerToken }, 201);
     try { await removeReplacedPhotos(stored,{stations:[]},code,env.BUCKET); } catch { console.warn('Patrac rejected creation photo cleanup failed'); }
-    if (await expeditionCount(db(),account!.id,visibility)>=limit) throw new GameError('Dosáhli jste limitu '+limit+' '+(visibility==='public'?'veřejných':'soukromých')+' výprav.',409);
+    const currentLimits=await creatorLimits(db(),account!.id),currentLimit=visibility==='public'?currentLimits.public:currentLimits.private;
+    if (await expeditionCount(db(),account!.id,visibility)>=currentLimit) throw new GameError(limitMessage(currentLimit),409);
   }
   throw new GameError('Kód se nepodařilo vytvořit. Zkuste to znovu.', 503);
 }
