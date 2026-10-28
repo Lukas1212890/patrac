@@ -2,6 +2,7 @@ import {GameError} from './patrac-engine.mjs';
 import {billingEnvironment} from './billing.mjs';
 import {communityReady} from './publicExpeditions.mjs';
 import {reviewsReady} from './publicReviews.mjs';
+import {createCreatorRewards,creatorRewardsReady} from './creatorRewards.mjs';
 const VISIBLE="json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.status')='running' AND json_extract(e.payload,'$.published')=1";
 const FINISHED=`WITH finished AS (
  SELECT a.id,a.code,a.user_id,json_extract(e.payload,'$.name') AS name,
@@ -67,7 +68,8 @@ export function createRankingService({db,env}){
   const players=await db.prepare(activityCTE+` SELECT substr(u.name,1,60) AS nickname,r.completed,r.rank,
    CASE WHEN r.user_id=? THEN 1 ELSE 0 END AS isMe FROM ranked r JOIN patrac_auth_user u ON u.id=r.user_id
    ORDER BY r.completed DESC,u.name COLLATE NOCASE ASC,r.user_id ASC LIMIT 20`).bind(environment,user?.id||'').all();
-  return{ready:true,environment,ratingsReady,ratedExpeditions,activePlayers:players.results.map(r=>({...r,isMe:!!r.isMe})),
+  return{ready:true,environment,ratingsReady,rewardsReady:await creatorRewardsReady(db),ratedExpeditions,activePlayers:players.results.map(r=>({...r,isMe:!!r.isMe})),
+   creatorRewards:user?await createCreatorRewards({db,env}).summary(user.id):null,
    myExpeditions:user?await authored(user,ratingsReady):null,
    myResults:user?{...await results(user),stats:await ownStats(user)}:null};
  }

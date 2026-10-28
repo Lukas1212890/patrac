@@ -1,6 +1,7 @@
 import {GameError,newTeam,applyAction,teamProjection,score} from './patrac-engine.mjs';
 import {accessState,billingEnvironment} from './billing.mjs';
 import {createReviewService,reviewsReady} from './publicReviews.mjs';
+import {createCreatorRewards} from './creatorRewards.mjs';
 export async function communityReady(db){return !!await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_public_attempts'").first();}
 export function validatePublicInfo(value){
  const info=value||{};
@@ -70,7 +71,7 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
     const current=i===0?row:await db.prepare('SELECT * FROM patrac_teams WHERE id=?').bind(row.id).first();if(!current)throw new GameError('Výprava byla odstraněna.',410);
     const next=applyAction(game,JSON.parse(current.payload),input,now()),wrong=next.wrongAnswer;delete next.wrongAnswer;
     const result=await db.prepare("UPDATE patrac_teams SET payload=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM patrac_expeditions WHERE code=? AND json_extract(payload,'$.status')='running')").bind(JSON.stringify(next),row.id,current.version,code).run();
-    if(result.meta.changes)return{ok:true,wrongAnswer:!!wrong};
+    if(result.meta.changes){if(next.finishedAt){try{await createCreatorRewards({db,env,now}).rewardExpedition(code);}catch{console.error('Creator reward deferred to scheduled retry');}}return{ok:true,wrongAnswer:!!wrong};}
    }throw new GameError('Pokus se právě mění v jiném okně. Obnovte ho.',409);
   }
   const team=JSON.parse(row.payload),projection=teamProjection(game,team,now());

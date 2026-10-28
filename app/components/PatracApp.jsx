@@ -8,6 +8,7 @@ import PublicExpeditionDetail from './PublicExpeditionDetail';
 import CreatorHub from './CreatorHub';
 import PlayLibrary from './PlayLibrary';
 import CommunityRankings from './CommunityRankings';
+import CreatorRewardNotice from './CreatorRewardNotice';
 import {publicRequest} from '../lib/public-client';
 import {checkPrivateHistory,mergePrivateHistory} from '../lib/privateHistory.mjs';
 import PatracEditor from './PatracEditor';
@@ -47,7 +48,7 @@ export default function PatracApp() {
     return () => { active = false; };
   }, [account.user?.id]);
   useEffect(() => { if (account.recovery) setView('account'); }, [account.recovery]);
-  const [view, setView] = useState('home'), [publicCode,setPublicCode]=useState(null), [publicBack,setPublicBack]=useState('home'), [rankingTab,setRankingTab]=useState('expeditions'), [creationVisibility,setCreationVisibility]=useState('private'), [session, setSession] = useState(null), [data, setData] = useState(null), [saved, setSaved] = useState([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [online, setOnline] = useState(true), [clock, setClock] = useState(Date.now()), [editInitial, setEditInitial] = useState(null), [editVersion, setEditVersion] = useState(null), [code, setCode] = useState(''), [teamName, setTeamName] = useState(''), [joiningToken, setJoiningToken] = useState(null), [help, setHelp] = useState(false), [resumeOpen, setResumeOpen] = useState(false);
+  const [view, setView] = useState('home'), [publicCode,setPublicCode]=useState(null), [publicBack,setPublicBack]=useState('home'), [rankingTab,setRankingTab]=useState('expeditions'), [rewardNotice,setRewardNotice]=useState(false), [creationVisibility,setCreationVisibility]=useState('private'), [session, setSession] = useState(null), [data, setData] = useState(null), [saved, setSaved] = useState([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [online, setOnline] = useState(true), [clock, setClock] = useState(Date.now()), [editInitial, setEditInitial] = useState(null), [editVersion, setEditVersion] = useState(null), [code, setCode] = useState(''), [teamName, setTeamName] = useState(''), [joiningToken, setJoiningToken] = useState(null), [help, setHelp] = useState(false), [resumeOpen, setResumeOpen] = useState(false);
   const currentSession = useRef(null), offset = useRef(0), inFlight = useRef(false);
   const validatePrivateHistory=useCallback(async signal=>{
     const entries=remembered();
@@ -81,8 +82,8 @@ export default function PatracApp() {
     try { const value = s.role==='public'?await publicRequest('/expeditions/'+s.code+'/play'):await request('/' + s.code, s.token); if (currentSession.current !== s) return; if (value.role !== (s.role==='public'?'team':s.role)) throw Error('Přístupový klíč není platný. Obnovte přístup ze zálohy.'); offset.current = value.now - Date.now(); setData(old => !old || value.now >= old.now ? value : old); setError(''); } catch (e) { if(currentSession.current!==s)return; if(s.role==='public'&&[401,402].includes(e.status)){currentSession.current=null;setSession(null);setData(null);setView('account');} if ([404,410].includes(e.status)) { forgetUnavailable(s); currentSession.current=null;setSession(null);setData(null);setView('removed'); } setError(e.name === 'TimeoutError' ? 'Server neodpovídá. Průběh zůstává uložený; zkuste obnovit spojení.' : e.message); }
   }, []);
   useEffect(() => { if (!session) return; refresh(); const interval = setInterval(() => { if (!document.hidden) refresh(); }, 5000); const resume = () => { if (!document.hidden) refresh(); }; window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume); window.addEventListener('pageshow', resume); return () => { clearInterval(interval); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); window.removeEventListener('pageshow', resume); }; }, [session?.code, session?.token, refresh]);
-  function home() { currentSession.current = null; setSession(null); setData(null); setError(''); setView('home'); setResumeOpen(false); history.replaceState(null, '', '/'); }
-  function navigate(next){currentSession.current=null;setSession(null);setData(null);setError('');setView(next);setResumeOpen(false);history.replaceState(null,'','/');}
+  function home() { setRewardNotice(false); currentSession.current = null; setSession(null); setData(null); setError(''); setView('home'); setResumeOpen(false); history.replaceState(null, '', '/'); }
+  function navigate(next){setRewardNotice(false);currentSession.current=null;setSession(null);setData(null);setError('');setView(next);setResumeOpen(false);history.replaceState(null,'','/');}
   function showPublic(code){setPublicBack(view==='rankings'?'rankings':'home');navigate('public-detail');setPublicCode(code);history.replaceState(null,'','/?public='+code);}
   async function action(input) {
     if (inFlight.current || !currentSession.current) return;
@@ -146,7 +147,8 @@ export default function PatracApp() {
     {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>navigate('account')} onStarted={enter}/>}
     {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team')} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
     {view==='rankings'&&<CommunityRankings user={account.user} tab={rankingTab} onTabChange={setRankingTab} onGames={()=>navigate('library')} onSelect={showPublic} onAccount={()=>navigate('account')} onMap={home}/>}
-    {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={openEditor} onGames={()=>navigate('library')}/>}
+    {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={visibility=>visibility==='public'?setRewardNotice(true):openEditor('private')} onGames={()=>navigate('library')}/>}
+    {view==='creator'&&rewardNotice&&<CreatorRewardNotice onClose={()=>setRewardNotice(false)} onContinue={()=>{setRewardNotice(false);openEditor('public');}}/>}
 
     {resumeOpen && <SavedGames sessions={availableGames} onEnter={enter} onRestore={restore} onClose={() => setResumeOpen(false)}/>}
     {view === 'account' && <CreatorAccount user={account.user} recovery={account.recovery} onBack={home} onSignedIn={home} onSignedOut={home} onRecoveryDone={account.finishRecovery}/>}

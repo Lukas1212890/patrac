@@ -7,7 +7,9 @@ import { publicRequest } from './public';
 import { accountAuth } from './auth';
 import * as account from './account';
 import * as config from './config';
+import {createCreatorRewards} from './lib/creatorRewards.mjs';
 export default {
+  async scheduled(){await createCreatorRewards({db:env.DB,env}).sweep();},
   async fetch(request: Request): Promise<Response> {
     const origin = request.headers.get('origin');
     if (origin && !allowedOrigin(origin, env.PATRAC_ALLOWED_ORIGINS)) return Response.json({ error: 'Nepovolený původ požadavku.' }, { status: 403 });

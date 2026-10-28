@@ -2,6 +2,7 @@ import {env} from 'cloudflare:workers';
 import {creatorIdentity} from './lib/creator-server';
 import {createBilling,verifyStripeSignature,billingEnvironment} from './lib/billing.mjs';
 import {GameError} from './lib/patrac-engine.mjs';
+import {createCreatorRewards} from './lib/creatorRewards.mjs';
 async function rawBody(request:Request,limit:number){
  const reader=request.body?.getReader();if(!reader)throw new GameError('Chybí údaje.');
  const chunks:Uint8Array[]=[];let size=0;
@@ -18,7 +19,7 @@ export async function billingRequest(request:Request){
   return Response.json({received:true});
  }
  const user=await creatorIdentity(request,true);
- if(path==='/api/billing'&&request.method==='GET')return Response.json(await api.state(user!.id));
+ if(path==='/api/billing'&&request.method==='GET')return Response.json({...await api.state(user!.id),creatorRewards:await createCreatorRewards({db:env.DB,env}).summary(user!.id)});
  if(path==='/api/billing/checkout'&&request.method==='POST'){
   if(!request.headers.get('origin'))throw new GameError('Chybí původ požadavku.',403);
   if(!request.headers.get('content-type')?.includes('application/json'))throw new GameError('Očekáváme JSON.',415);

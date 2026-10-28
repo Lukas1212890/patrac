@@ -4,6 +4,7 @@ import {build} from 'esbuild';
 import {Miniflare} from 'miniflare';
 import {readFileSync} from 'node:fs';
 import {hashPassword} from 'better-auth/crypto';
+import {newTeam} from '../worker/lib/patrac-engine.mjs';
 test('Worker community flow enforces real sessions, two public slots, one concurrent account attempt and locked routes',async()=>{
  const built=await build({entryPoints:['worker/index.ts'],bundle:true,format:'esm',platform:'browser',external:['cloudflare:workers','node:*'],write:false,logLevel:'silent'});
  const mf=new Miniflare({modules:[{type:'ESModule',path:process.cwd()+'/worker/public-worker-test.mjs',contents:built.outputFiles[0].text}],modulesRoot:process.cwd(),compatibilityDate:'2026-05-22',compatibilityFlags:['nodejs_compat'],cf:false,d1Databases:['DB'],r2Buckets:['BUCKET'],bindings:{PATRAC_AUTH_SECRET:'local-community-worker-key-not-for-production-8642',PATRAC_AUTH_BASE_URL:'http://localhost:8790',PATRAC_ALLOWED_ORIGINS:'http://localhost:3000',PATRAC_BILLING_ENABLED:'true',PATRAC_STRIPE_MODE:'test',PATRAC_REGISTRATION_READY:'false'}});
@@ -13,6 +14,7 @@ test('Worker community flow enforces real sessions, two public slots, one concur
   const before=await(await request('/api/public/expeditions')).json();assert.equal(before.ready,false);
   for(const sql of readFileSync(new URL('../drizzle/0005_public_expeditions.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
   for(const sql of readFileSync(new URL('../drizzle/0006_public_reviews.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
+  for(const sql of readFileSync(new URL('../drizzle/0007_creator_rewards.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
   const password='public-worker-fixture-password-long-8642',hash=await hashPassword(password),stamp=Date.now(),tokens={};
   for(const id of ['author','player','unpaid']){
    await db.prepare('INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,1,?,?)').bind(id,id,id+'@example.com',stamp,stamp).run();
@@ -51,20 +53,31 @@ test('Worker community flow enforces real sessions, two public slots, one concur
   assert.equal((await request(reviewPath,{action:'save',stars:5,comment:'Pěkné!'},tokens.player)).status,403);
   await request('/api/public/expeditions/'+code+'/play',{action:'answer',index:0,answer:'first'},tokens.player);
   await request('/api/public/expeditions/'+code+'/play',{action:'arrive',index:1,position:{lat:49.301,lng:17.391,acc:5,timestamp:Date.now()}},tokens.player);
+  for(let i=0;i<99;i++){const id='reward-player-'+i,team='reward-team-'+i;await db.batch([
+   db.prepare('INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,1,?,?)').bind(id,'ZZ hráč '+i,id+'@example.com',stamp,stamp),
+   db.prepare('INSERT INTO patrac_teams VALUES(?,?,?,?,?,0)').bind(team,code,'token-'+team,'name-'+team,JSON.stringify({...newTeam(team,'ZZ hráč '+i,stamp),startedAt:stamp-999999,finishedAt:stamp-1,penaltyMs:0,index:2})),
+   db.prepare("INSERT INTO patrac_public_attempts VALUES(?,?,?,?,?,'test')").bind(team,code,id,team,stamp),
+  ]);}
   assert.equal((await request('/api/public/expeditions/'+code+'/play',{action:'answer',index:1,answer:'last'},tokens.player)).status,200);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_creator_rewards').first()).n,1);
+  const rewardAccess=await db.prepare("SELECT * FROM patrac_access WHERE user_id='author' AND environment='test'").first();assert.equal(rewardAccess.version,1);assert.ok(rewardAccess.expires_at>stamp+30*86400000);
+  const rewardProfile=await(await request('/api/billing',null,tokens.author)).json();assert.equal(rewardProfile.creatorRewards.awardedMonths,2);assert.equal(rewardProfile.creatorRewards.expeditions.find(g=>g.code===code).nextMilestone,200);
+  await request('/api/public/expeditions/'+code+'/play',{action:'answer',index:1,answer:'last'},tokens.player);
+  const scheduledOutcome=await (await mf.getWorker()).scheduled({cron:'0 * * * *'});assert.equal(scheduledOutcome.outcome,'ok');assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_creator_rewards').first()).n,1);
+
   assert.equal((await request(reviewPath,{action:'save',stars:6,comment:''},tokens.player)).status,400);
   const posted=await request(reviewPath,{action:'save',stars:5,comment:'Pěkná výprava!'},tokens.player);assert.equal(posted.status,200,await posted.clone().text());
   const rated=await(await request('/api/public/expeditions/'+code)).json();assert.equal(rated.reviews.average,5);assert.equal(rated.reviews.count,1);assert.equal(rated.reviews.items[0].nickname,'New nickname');assert.equal(rated.reviews.ownReview,null);
   assert.equal((await request(reviewPath,{action:'save',stars:5,comment:''},tokens.author)).status,403);
   assert.equal((await(await request(reviewPath)).json()).items.length,1);
-  const board=await(await request('/api/public/rankings',null,tokens.player)).json();assert.equal(board.ready,true);assert.equal(board.ratedExpeditions[0].code,code);assert.equal(board.activePlayers[0].nickname,'New nickname');assert.equal(board.myResults.items[0].rank,1);assert.equal(board.myResults.stats.completed,1);assert.deepEqual(board.myExpeditions,[]);const authorBoard=await(await request('/api/public/rankings',null,tokens.author)).json();assert.equal(authorBoard.myExpeditions.length,2);assert.equal(authorBoard.myExpeditions.find(g=>g.code===code).rating.average,5);
+  const board=await(await request('/api/public/rankings',null,tokens.player)).json();assert.equal(board.ready,true);assert.equal(board.ratedExpeditions[0].code,code);assert.equal(board.activePlayers[0].nickname,'New nickname');assert.equal(board.myResults.items[0].rank,1);assert.equal(board.myResults.stats.completed,1);assert.deepEqual(board.myExpeditions,[]);const authorBoard=await(await request('/api/public/rankings',null,tokens.author)).json();assert.equal(authorBoard.myExpeditions.length,2);assert.equal(authorBoard.myExpeditions.find(g=>g.code===code).rating.average,5);assert.equal(authorBoard.creatorRewards.awardedMonths,2);
   assert.equal((await(await request('/api/public/rankings')).json()).myResults,null);assert.equal((await request('/api/public/results')).status,401);assert.equal((await(await request('/api/public/results',null,tokens.unpaid)).json()).items.length,0);
   assert.equal((await request('/api/expeditions/'+code,{action:'hide'},tokens.author)).status,200);assert.equal((await(await request('/api/public/expeditions')).json()).expeditions.length,0);assert.equal((await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).status,200);
   assert.equal((await(await request('/api/public/attempts',null,tokens.unpaid)).json()).attempts.length,0);
   const finalOwner=await(await request('/api/expeditions/'+code,null,tokens.author)).json();
   assert.equal((await request('/api/expeditions/'+code,{action:'delete',version:finalOwner.version,confirmation:code},tokens.author)).status,200);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_public_attempts').first()).n,0);
-  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_public_reviews').first()).n,0);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_public_reviews').first()).n,0);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_creator_rewards').first()).n,1);
   assert.equal((await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).status,404);
  }finally{await mf.dispose();}
 });
