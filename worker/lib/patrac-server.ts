@@ -122,8 +122,6 @@ export async function changeExpedition(request: Request, code: string) {
     if (game.status !== 'waiting') throw new GameError('Pravidla a trasu po startu nelze měnit.', 409);
     let next;
     if (input.action === 'save') {
-      const count = await db().prepare('SELECT COUNT(*) as n FROM patrac_teams WHERE code = ?').bind(code).first<any>();
-      if (count.n > 0) throw new GameError('Po připojení týmů už trasu neměňte. Pro jinou trasu vytvořte novou výpravu.', 409);
       if (input.version !== row.version) throw new GameError('Výpravu mezitím změnilo jiné okno. Obnovte ji.', 409);
       next = await storePhotos({ ...game, ...validateExpedition(input.game) }, code, game);
     } else if (input.action === 'start') {
@@ -131,8 +129,8 @@ export async function changeExpedition(request: Request, code: string) {
       if (count.n < 1) throw new GameError('Nejdříve připojte alespoň jeden tým.');
       next = { ...game, status: 'running', startedAt: Date.now() };
     } else throw new GameError('Neznámá akce autora.');
-    const sql = 'UPDATE patrac_expeditions SET payload = ?, version = version + 1 WHERE code = ? AND version = ?' + (input.action === 'save' ? ' AND NOT EXISTS (SELECT 1 FROM patrac_teams WHERE code = ?)' : '');
-    const values = input.action === 'save' ? [JSON.stringify(next), code, row.version, code] : [JSON.stringify(next), code, row.version];
+    const sql = "UPDATE patrac_expeditions SET payload = ?, version = version + 1 WHERE code = ? AND version = ? AND json_extract(payload, '$.status') = 'waiting'";
+    const values = [JSON.stringify(next), code, row.version];
     const result = await db().prepare(sql).bind(...values).run();
     if (!result.meta.changes) throw new GameError('Průběh se změnil. Obnovte výpravu.', 409);
     if (input.action === 'save') {

@@ -44,5 +44,18 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   const paidState=await(await request('/api/billing',null,token)).json();assert.equal(paidState.active,true);
   const updated=await(await request('/api/admin/users/user',null,token)).json();assert.equal(updated.billing.version,1);assert.equal(updated.audit.filter(a=>a.action==='access').length,1);
 
+  // An attached team has not received a route before start: the author can still edit everything.
+  const waiting={...game,status:'waiting',startedAt:null,stations:[...game.stations,{...game.stations[0],id:'s1',name:'Druhé místo'}]};
+  await db.prepare('INSERT INTO patrac_expeditions VALUES(?,?,?,0)').bind('HJKLMNP','owner-hash',JSON.stringify(waiting)).run();
+  await db.prepare('INSERT INTO patrac_creator_games VALUES(?,?,?)').bind('HJKLMNP','user',stamp).run();
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'join',name:'Waiting team',teamToken:'b'.repeat(64)})).status,201);
+  const edited={...waiting,name:'Celá upravená výprava',mode:'treasure',stations:[{...waiting.stations[0],question:'Nová hádanka',answer:'nová odpověď'}]};
+  const saved=await request('/api/expeditions/HJKLMNP',{action:'save',game:edited,version:0},token);assert.equal(saved.status,200,await saved.clone().text());
+  const newGame=(await(await request('/api/expeditions/HJKLMNP',null,token)).json()).game;
+  assert.equal(newGame.name,edited.name);assert.equal(newGame.mode,'treasure');assert.equal(newGame.stations.length,1);assert.equal(newGame.stations[0].question,'Nová hádanka');
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'save',game:waiting,version:0},token)).status,409);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'start'},token)).status,200);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'save',game:waiting,version:1},token)).status,409);
+
  }finally{await mf.dispose();}
 });

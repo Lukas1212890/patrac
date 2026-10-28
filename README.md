@@ -70,3 +70,5 @@ V detailu účtu v `/admin` je stav přístupu v aktuálním serverovém prostř
 ## Dokončení stanoviště v editoru
 
 Pod nápovědami je „Uložit stanoviště“. Zkontroluje jen aktuální stanoviště, u nové výpravy uloží koncept do zařízení a sbalí formulář k tlačítku „Přidat další stanoviště“. Existující stanoviště lze znovu otevřít v trase. U již vytvořené výpravy jde o přípravu změn v editoru; teprve závěrečné „Uložit změny“ zapisuje celou výpravu na server. „Vytvořit výpravu“ zůstává závěrečným krokem nové výpravy. Při nedostupném místním úložišti editor zobrazí upozornění a umožní dokončení bez zavření stránky.
+
+Omylem přidané prázdné stanoviště lze odstranit bez vyplňování nebo potvrzení tlačítkem dole u ukládání i ikonou koše nahoře. Vyplněné stanoviště vyžaduje potvrzení; u posledního zbývajícího místa se vymažou údaje a zachová jeden prázdný formulář. Před startem je možné upravit název, režim, celou trasu a obsah i s připojenými čekajícími týmy. Server kontroluje stav `waiting` a verzi v atomickém zápisu; start nebo novější úprava zablokují zastaralé uložení. Po startu se trasa nemění.
