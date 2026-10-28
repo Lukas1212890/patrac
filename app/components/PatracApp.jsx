@@ -145,7 +145,7 @@ export default function PatracApp() {
     {view === 'home' && <CommunityMap onSelect={showPublic} onJoin={()=>navigate('join')}/>}
     {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>navigate('account')} onStarted={enter}/>}
     {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team')} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
-    {view==='rankings'&&<CommunityRankings user={account.user} tab={rankingTab} onTabChange={setRankingTab} onSelect={showPublic} onAccount={()=>navigate('account')} onMap={home}/>}
+    {view==='rankings'&&<CommunityRankings user={account.user} tab={rankingTab} onTabChange={setRankingTab} onGames={()=>navigate('library')} onSelect={showPublic} onAccount={()=>navigate('account')} onMap={home}/>}
     {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={openEditor} onGames={()=>navigate('library')}/>}
 
     {resumeOpen && <SavedGames sessions={availableGames} onEnter={enter} onRestore={restore} onClose={() => setResumeOpen(false)}/>}
