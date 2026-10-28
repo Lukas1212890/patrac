@@ -85,7 +85,8 @@
 /* Keep the home-indicator inset continuous with the app on installed iOS/Android. */
 .p-bottom-nav{background:#eaf2ff}
 html,body{background-color:#eaf2ff}
-@media(display-mode:standalone),(display-mode:fullscreen){
- body::after{content:"";position:fixed;inset:auto 0 0;height:env(safe-area-inset-bottom,0px);background:#eaf2ff;pointer-events:none;z-index:90}
-}
-html[data-patrac-zoom-locked] body::after{content:"";position:fixed;inset:auto 0 0;height:env(safe-area-inset-bottom,0px);background:#eaf2ff;pointer-events:none;z-index:90}
+/* Reserve the bottom safe area once; iOS can report an oversized inset on resume. */
+:root{--patrac-bottom-safe:min(env(safe-area-inset-bottom,0px),34px)}
+.p-app:has(>.p-bottom-nav){padding-bottom:calc(70px + var(--patrac-bottom-safe))}
+.p-bottom-nav{height:calc(70px + var(--patrac-bottom-safe));padding:6px max(8px,calc((100vw - 700px)/2)) calc(6px + var(--patrac-bottom-safe));grid-template-rows:58px;align-content:start}
+.p-bottom-nav button{min-height:54px}
