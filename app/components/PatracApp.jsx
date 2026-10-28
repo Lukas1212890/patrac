@@ -143,7 +143,7 @@ export default function PatracApp() {
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
     {view === 'home' && <CommunityMap onSelect={showPublic} onJoin={()=>navigate('join')}/>}
     {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={home} onAccount={()=>navigate('account')} onStarted={enter}/>}
-    {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team')} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onJoin={()=>navigate('join')} onRestore={restore}/>}
+    {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team')} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
     {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={openEditor} onGames={()=>navigate('library')}/>}
 
     {resumeOpen && <SavedGames sessions={availableGames} onEnter={enter} onRestore={restore} onClose={() => setResumeOpen(false)}/>}
