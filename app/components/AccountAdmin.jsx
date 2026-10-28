@@ -4,6 +4,7 @@ import { ShieldCheck, Search, ArrowLeft, ChevronLeft, ChevronRight, LogOut, Mail
 import { creatorClient, creatorAccessToken, clearAccount } from '../lib/creator-client';
 import { apiUrl } from '../lib/apiUrl.mjs';
 import '../admin/admin.css';
+import {announceAccountUpdate} from '../lib/noticeRefresh.mjs';
 import AdminAccess from './AdminAccess';
 import AdminLimits from './AdminLimits';
 import AdminDeleteExpedition from './AdminDeleteExpedition';
@@ -52,7 +53,7 @@ export default function AccountAdmin() {
   async function perform(input){
     setBusy(true);setError('');setMessage('');
     try{
-      const result=await api('/users',input);setMessage(result.message);setWarning(!!result.warning);
+      const result=await api('/users',input);if(result.ok&&['access','limits','delete-expedition'].includes(input.action))announceAccountUpdate(input.id);setMessage(result.message);setWarning(!!result.warning);
       if(result.selfSignedOut){setEmail(input.action==='update'?input.email:admin.email);clearAccount();setMode('login');setAdmin(null);setSelected(null);}else setReload(v=>v+1);if(input.action==='delete-expedition')setDeleteTarget(null);return result;
     }catch(e){if(e.code==='ADMIN_REAUTH_REQUIRED'){returnFocus.current=document.activeElement;setPassword('');setPending(input);}else if(e.status===401){clearAccount();setMode('login');setError('Přihlášení vypršelo. Přihlaste se znovu.');}else setError(e.message);if(e.code==='ADMIN_DELETE_PENDING'||e.code==='ADMIN_CONFLICT')setReload(v=>v+1);if(e.code==='ADMIN_DELETE_PENDING')setDeleteTarget(current=>current?{...current,game:{...current.game,deletion:{requestKey:input.requestKey,reason:input.reason}}}:null);return{ok:false,error:e.message};}finally{setBusy(false);}
   }

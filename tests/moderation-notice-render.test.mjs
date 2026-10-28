@@ -33,3 +33,14 @@ test('lowering private/public quotas from 20/30 to 3/2 never renders a deletion 
  for(const notice of [{},{type:'future-event'},{type:'access',months:3,expiresAt:1799999999999},{type:'reward',months:2,milestone:100,expiresAt:1799999999999}])assert.equal(render(notice).includes('Výpravu odstranil správce'),false);
  const oneChange=render({type:'limits',oldPrivateLimit:20,privateLimit:3,oldPublicLimit:2,publicLimit:2});assert.equal(oneChange.includes('Veřejné výpravy:'),false);
 });
+
+test('red badges show the same unread count in profile and notices; read history remains visible after the count reaches zero',async()=>{
+ const built=await build({stdin:{contents:"export {default as Badge} from './NoticeBadge.jsx';export {default as Notices} from './AccountNotifications.jsx';export {default as Banner} from './CreatorNotices.jsx';",resolveDir:process.cwd()+'/app/components',loader:'jsx'},bundle:true,platform:'node',format:'cjs',packages:'external',jsx:'automatic',write:false,logLevel:'silent'});
+ const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(require,mod,mod.exports);
+ const render=(Component,props)=>renderToStaticMarkup(createElement(Component,props));
+ const notices=[{id:'a',type:'access',months:3,expiresAt:1799999999999},{id:'b',type:'limits',oldPrivateLimit:20,privateLimit:3,oldPublicLimit:30,publicLimit:2}];
+ const badge=render(mod.exports.Badge,{count:2});assert.ok(badge.includes('2 nepřečtených oznámení'));assert.ok(badge.includes('p-notice-count'));
+ const unread=render(mod.exports.Notices,{notices,unreadNotices:notices,unreadCount:2});assert.ok(unread.includes('2 nepřečtených oznámení'));assert.ok(unread.includes('Označit všechna jako přečtená'));assert.equal((unread.match(/>Označit jako přečtené</g)||[]).length,2);
+ const read=render(mod.exports.Notices,{notices,unreadNotices:[],unreadCount:0});assert.equal(read.includes('p-notice-count'),false);assert.equal(read.includes('Označit jako přečtené'),false);assert.ok(read.includes('Správce prodloužil váš přístup'));
+ assert.equal(render(mod.exports.Badge,{count:0}),'');assert.equal(render(mod.exports.Banner,{notices:[]}), '');
+});

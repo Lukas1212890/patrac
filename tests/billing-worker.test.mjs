@@ -68,6 +68,8 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   const granted=await request('/api/admin/users',grant,token);assert.equal(granted.status,200,await granted.clone().text());
   assert.equal((await request('/api/admin/users',grant,token)).status,200);
   const paidState=await(await request('/api/billing',null,token)).json();assert.equal(paidState.active,true);
+  const noticeState=await(await request('/api/account/notices?format=2',null,token)).json();assert.equal(noticeState.format,2);assert.equal(noticeState.notices.filter(n=>n.type==='access').length,1);const accessNotice=noticeState.notices.find(n=>n.type==='access');assert.equal(accessNotice.months,3);assert.equal(accessNotice.expiresAt,paidState.expiresAt);
+  assert.equal((await(await request('/api/account/notices?format=2',null,players.player)).json()).notices.some(n=>n.type==='access'),false);
   const updated=await(await request('/api/admin/users/user',null,token)).json();assert.equal(updated.billing.version,1);assert.equal(updated.audit.filter(a=>a.action==='access').length,1);
 
   // An attached team has not received a route before start: the author can still edit everything.

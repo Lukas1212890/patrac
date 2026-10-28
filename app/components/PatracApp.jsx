@@ -3,6 +3,7 @@ import { apiUrl } from '../lib/apiUrl.mjs';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Compass, ArrowLeft, ArrowRight, Plus, Users, Flag, Clock3, Trophy, LockKeyhole, Lightbulb, Image as ImageIcon, Navigation, MapPin, Map as MapIcon, RefreshCw, Download, Copy, Check, ChevronRight, LocateFixed, HelpCircle, ShieldCheck, UserRound, Trash2, Globe2, Map as MapTab, Footprints } from 'lucide-react';
+import NoticeBadge from './NoticeBadge';
 import RouteEstimateNote from './RouteEstimateNote';
 import {formatRouteDistance} from '../../shared/routeEstimate.mjs';
 import CommunityMap from './CommunityMap';
@@ -45,7 +46,7 @@ function Progress({ index, total }) { return <div className="p-progress" role="p
 export default function PatracApp() {
   const account = useCreatorAccount();
   const notificationState=useCreatorNotices(account.user?.id);
-  const notices=notificationState.notices;
+  const notices=notificationState.unreadNotices;
   const [accountGames, setAccountGames] = useState([]);
   useEffect(() => {
     if (!account.user) { setAccountGames([]); return; }
@@ -54,6 +55,7 @@ export default function PatracApp() {
   }, [account.user?.id]);
   useEffect(() => { if (account.recovery) setView('account'); }, [account.recovery]);
   const [view, setView] = useState('home'), [publicCode,setPublicCode]=useState(null), [publicBack,setPublicBack]=useState('home'), [rankingTab,setRankingTab]=useState('expeditions'), [rewardNotice,setRewardNotice]=useState(false), [creationVisibility,setCreationVisibility]=useState('private'), [session, setSession] = useState(null), [data, setData] = useState(null), [saved, setSaved] = useState([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [online, setOnline] = useState(true), [clock, setClock] = useState(Date.now()), [editInitial, setEditInitial] = useState(null), [editVersion, setEditVersion] = useState(null), [code, setCode] = useState(''), [help, setHelp] = useState(false), [resumeOpen, setResumeOpen] = useState(false);
+  useEffect(()=>{if(view==='account'&&account.user)notificationState.refresh();},[view,account.user?.id,notificationState.refresh]);
   const currentSession = useRef(null), offset = useRef(0), inFlight = useRef(false);
   const validatePrivateHistory=useCallback(async signal=>{
     const entries=remembered().filter(s=>s.role!=='team'||(account.user&&(!s.userId||s.userId===account.user.id)));
@@ -149,8 +151,8 @@ export default function PatracApp() {
   const availableGames = [...accountGames, ...saved.filter(s => account.user&&(!s.userId||s.userId===account.user.id))].filter((s, i, all) => all.findIndex(other => other.code === s.code && other.role === s.role) === i);
   const now = clock + offset.current;
   return <div className={'p-app p-view-' + view + (!account.user ? ' p-guest' : '')}>
-    <header className="p-header"><Brand home={home}/><div className="p-header-actions"><span className="p-desktop-label">Dobrodružství začíná venku.</span><button className="p-icon-button" aria-label="Jak se hraje" onClick={() => setHelp(true)}><HelpCircle size={21}/></button><button className="p-icon-button" aria-label={account.user ? "Můj profil" : "Přihlášení"} onClick={() => setView('account')}><UserRound size={20}/></button>{session && <button className="p-icon-button" aria-label="Obnovit průběh" onClick={refresh}><RefreshCw size={19}/></button>}</div></header>
-    {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onOpenProfile={()=>navigate('account')}/>}
+    <header className="p-header"><Brand home={home}/><div className="p-header-actions"><span className="p-desktop-label">Dobrodružství začíná venku.</span><button className="p-icon-button" aria-label="Jak se hraje" onClick={() => setHelp(true)}><HelpCircle size={21}/></button><button className="p-icon-button p-profile-button" aria-label={account.user ? "Můj profil"+(notificationState.unreadCount?", nepřečtená oznámení: "+notificationState.unreadCount:"") : "Přihlášení"} onClick={() => setView('account')}><UserRound size={20}/>{account.user&&<NoticeBadge count={notificationState.unreadCount}/>}</button>{session && <button className="p-icon-button" aria-label="Obnovit průběh" onClick={refresh}><RefreshCw size={19}/></button>}</div></header>
+    {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onRead={notificationState.markRead} onOpenProfile={()=>navigate('account')}/>}
     {!online && <div className="p-connection" role="status">Jste offline. Čas běží dál. Hra se připojí, jakmile bude signál.</div>}
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
     {view === 'home' && <CommunityMap onSelect={showPublic} onJoin={()=>navigate('join')}/>}
