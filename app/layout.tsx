@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./patrac.css";
+import PwaGestureGuard from "./components/PwaGestureGuard";
 import "./community.css";
 export const metadata: Metadata = {
  title: "Pátrač — dobrodružství ze světa Stopíka",
@@ -11,5 +12,5 @@ export const metadata: Metadata = {
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#2348df" };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
- return <html lang="cs"><head><link rel="stylesheet" href="/vendor/maplibre-gl.css"/></head><body>{children}</body></html>;
+ return <html lang="cs"><head><link rel="stylesheet" href="/vendor/maplibre-gl.css"/></head><body><PwaGestureGuard/>{children}</body></html>;
 }

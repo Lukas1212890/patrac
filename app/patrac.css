@@ -275,3 +275,8 @@ html[data-patrac-home-locked] .p-player-travelling>.p-travel-bottom{touch-action
 .p-editor .p-delete-station{color:#9b3030;border-color:#d7a8a8;background:#fff5f3;min-height:48px}.p-start-panel .p-edit-expedition{width:100%;margin-top:12px}
 
 .p-delete-game-panel{margin-top:20px}.p-delete-game-panel h3{font-size:23px;margin-bottom:12px}.p-delete-game-panel .p-secondary{width:100%;margin-top:16px}.p-app .p-delete-expedition{color:#9b3030;border-color:#d7a8a8;background:#fff5f3;min-height:48px}.p-delete-game-dialog>svg{color:#9b3030}.p-delete-game-dialog .p-label{margin-top:16px}
+
+/* Restrict browser zoom, while map canvases retain their own JS pinch handling. */
+html[data-patrac-zoom-locked],html[data-patrac-zoom-locked] body{touch-action:pan-x pan-y}
+@media(display-mode:standalone),(display-mode:fullscreen){html,body{touch-action:pan-x pan-y}}
+html[data-patrac-zoom-locked] [data-patrac-map-gestures]{touch-action:none}

@@ -45,7 +45,7 @@ export default function PatracMap({ target, position, onPick, heading = null }) 
     else user.current.setLngLat([position.lng, position.lat]);
     if (target && !onPick) autoFitNavMap(m, position, target, false, heading, getBaseMapConfig(baseMap).maxzoom);
   }, [position?.lat, position?.lng, target?.lat, target?.lng, heading, baseMap]);
-  return <div className="p-map-wrap">{fallback ? <RasterMap target={target} position={position} onPick={onPick} baseMap={baseMap}/> : <div className="p-map" ref={node} aria-label={onPick ? 'Kliknutím vyberte stanoviště' : 'Mapa aktuálního cíle'} />}<div className="p-map-switch"><button type="button" className={baseMap === 'map' ? 'selected' : ''} onClick={() => setBase('map')}>Mapa</button><button type="button" className={baseMap === 'aerial' ? 'selected' : ''} onClick={() => setBase('aerial')}>Letecká</button></div>{error && <div className="p-map-error" role="status">{error}</div>}</div>;
+  return <div className="p-map-wrap">{fallback ? <RasterMap target={target} position={position} onPick={onPick} baseMap={baseMap}/> : <div className="p-map" data-patrac-map-gestures="true" ref={node} aria-label={onPick ? 'Kliknutím vyberte stanoviště' : 'Mapa aktuálního cíle'} />}<div className="p-map-switch"><button type="button" className={baseMap === 'map' ? 'selected' : ''} onClick={() => setBase('map')}>Mapa</button><button type="button" className={baseMap === 'aerial' ? 'selected' : ''} onClick={() => setBase('aerial')}>Letecká</button></div>{error && <div className="p-map-error" role="status">{error}</div>}</div>;
 }
 
 // Raster fallback retains a working map on devices without a WebGL context.
@@ -79,7 +79,7 @@ export function RasterMap({ target, position, onPick, baseMap, navigation = fals
   const pointStyle = point => { const pixel = project(point, viewZoom); return { position: 'absolute', left: pixel.x - origin.x, top: pixel.y - origin.y, transform: 'translate(-50%,-50%)', pointerEvents: 'none' }; };
   const a = position ? project(position, viewZoom) : null, b = target ? project(target, viewZoom) : null;
   const zoneRadius = target ? 7.5 / (156543.033928 * Math.cos(target.lat * Math.PI / 180) / 2 ** viewZoom) : 0;
-  return <div className="p-raster-map" ref={box} role="application" aria-label={onPick ? 'Mapa: přetáhněte pro posun, klepněte pro výběr' : 'Mapa cíle'}
+  return <div className="p-raster-map" data-patrac-map-gestures="true" ref={box} role="application" aria-label={onPick ? 'Mapa: přetáhněte pro posun, klepněte pro výběr' : 'Mapa cíle'}
     onPointerDown={e => { if (navigation || e.target.closest('button,a')) return; drag.current = { x: e.clientX, y: e.clientY }; e.currentTarget.setPointerCapture(e.pointerId); }}
     onPointerUp={e => { const start = drag.current; drag.current = null; if (!start) return; const dx = e.clientX - start.x, dy = e.clientY - start.y; if (Math.hypot(dx, dy) > 6) setCenter(unproject(p.x - dx, p.y - dy, zoom)); else if (onPick) { const bounds = box.current.getBoundingClientRect(); onPick(unproject(origin.x + e.clientX - bounds.left, origin.y + e.clientY - bounds.top, zoom)); } }}>
     <div className="p-raster-content" style={{ position: 'absolute', inset: 0, transform: navigation ? `rotate(${-(heading || 0)}deg)` : undefined, transition: navigation ? 'transform .18s linear' : undefined }}>{tiles}
