@@ -1,0 +1,25 @@
+{
+  "name": "patrac-api",
+  "main": "index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "patrac",
+      "database_id": "REPLACE_WITH_NEW_PATRAC_DATABASE_ID",
+      "migrations_dir": "../drizzle"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "patrac-photos"
+    }
+  ],
+  "vars": {
+    "PATRAC_AUTH_URL": "https://ngkwalqrywdytiieqemz.supabase.co",
+    "PATRAC_REGISTRATION_READY": "false",
+    "PATRAC_ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000"
+  }
+}
