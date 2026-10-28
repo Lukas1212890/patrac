@@ -12,9 +12,10 @@ export default function AdminAccess({billing,userId,busy,onChange}){
   onChange({...values,requestKey:request.current.key});
  }
  return <section className="pa-access" aria-label="Předplatné a platby"><h3>Platnost přístupu</h3>
- <p className="pa-access-mode">{billing.environment==='test'?'TESTOVACÍ PROSTŘEDÍ — změny platí jen pro sandbox':'OSTRÝ PROVOZ'}</p>
+ <p className="pa-access-mode">{billing.environment==='test'?'TESTOVACÍ PROSTŘEDÍ — přístupy od správce platí i v ostrém provozu':'OSTRÝ PROVOZ'}</p>
  <p><span className={'pa-badge '+(billing.active?'verified':'')}>{billing.active?'Aktivní':billing.expiresAt?'Vypršel':'Bez přístupu'}</span></p>
  <p>Platnost do: <strong>{date(billing.expiresAt)}</strong></p>
+ {billing.environment==='test'&&<p>Přístup uznaný pro ostrý provoz do: <strong>{date(billing.liveExpiresAt)}</strong></p>}
  <form onSubmit={submit}>
  <label>Přidat období<select disabled={busy} value={months} onChange={e=>{setMonths(Number(e.target.value));resetKey();}}><option value={3}>3 měsíce</option><option value={6}>6 měsíců</option><option value={12}>12 měsíců</option></select></label>
  <label>Důvod přidělení<input disabled={busy} required minLength={3} maxLength={240} placeholder="Například dárek nebo kompenzace" value={reason} onChange={e=>{setReason(e.target.value);resetKey();}}/></label>

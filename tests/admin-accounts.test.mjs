@@ -130,8 +130,8 @@ test('a failed access transaction rolls back its audit and can be retried safely
  await assert.rejects(()=>f.service.change(f.admin,input));assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM patrac_admin_audit WHERE action='access'").get().n,0);assert.equal((await f.service.detail(f.admin,'target')).billing.active,false);
  f.db.exec('DROP TRIGGER simulate_access_failure');await f.service.change(f.admin,input);assert.equal((await f.service.detail(f.admin,'target')).billing.version,1);f.db.close();
 });
-test('expired access starts today and sandbox grants do not become live grants',async()=>{
+test('expired access starts today and administrator gifts are also credited to live',async()=>{
  const f=await fixture(false,'test');f.db.prepare("INSERT INTO patrac_access VALUES('target','test',1,0)").run();await f.service.change(f.admin,accessInput());
- assert.ok((await f.service.detail(f.admin,'target')).billing.expiresAt>Date.now());assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM patrac_access WHERE environment='live'").get().n,0);f.db.close();
+ assert.ok((await f.service.detail(f.admin,'target')).billing.expiresAt>Date.now());assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM patrac_access WHERE environment='live'").get().n,1);f.db.close();
  const off=await fixture();await assert.rejects(()=>off.service.change(off.admin,accessInput()),e=>e.status===503);off.db.close();
 });

@@ -1,3 +1,4 @@
+import {carryAdminAccess} from './adminAccessCarryover.mjs';
 import { GameError } from './patrac-engine.mjs';
 export const PLANS = Object.freeze([
  {months:3,amount:19900,price:'price_1UVU6cANHHDZraJ6zOLs3WIp'},
@@ -13,6 +14,7 @@ export function addMonths(stamp, months) {
 }
 export function billingEnvironment(env) { return env.PATRAC_STRIPE_MODE==='live'?'live':'test'; }
 export async function accessState(db, userId, environment, now=Date.now()) {
+ if(environment==='live')await carryAdminAccess(db,userId);
  const row=await db.prepare('SELECT expires_at FROM patrac_access WHERE user_id=? AND environment=?').bind(userId,environment).first();
  return {expiresAt:row?.expires_at||null,active:(row?.expires_at||0)>now};
 }
@@ -78,6 +80,7 @@ export function createBilling({db,env,fetcher=fetch,now=Date.now}) {
   if(!order)return {received:true};
   const lines=session.line_items?.data;
   if(order.environment!==environment||session.livemode!==(environment==='live')||session.mode!=='payment'||session.currency!=='czk'||session.amount_total!==order.amount||session.metadata?.patrac_order!==order.id||session.metadata?.patrac_user!==order.user_id||!Array.isArray(lines)||lines.length!==1||session.line_items.has_more||lines[0].price?.id!==order.price_id||lines[0].quantity!==1||(order.session_id&&order.session_id!==session.id))throw new GameError('Údaje platby nesouhlasí.',400);
+  if(environment==='live')await carryAdminAccess(db,order.user_id);
   await db.prepare('INSERT OR IGNORE INTO patrac_access(user_id,environment) VALUES(?,?)').bind(order.user_id,environment).run();
   for(let i=0;i<8;i++){
    const current=await db.prepare('SELECT * FROM patrac_access WHERE user_id=? AND environment=?').bind(order.user_id,environment).first();

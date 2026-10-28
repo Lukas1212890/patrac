@@ -1,3 +1,4 @@
+import {carryAdminAccess} from './adminAccessCarryover.mjs';
 import {activePlayersQuery} from './activeExpeditionPlayers.mjs';
 import {availableNickname} from './nicknames.mjs';
 import { addMonths } from './billing.mjs';
@@ -39,9 +40,11 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
   async function finish(id, status) { await db.prepare('UPDATE patrac_admin_audit SET status = ? WHERE id = ?').bind(status, id).run(); }
   async function billingDetail(userId) {
     if (!['test','live'].includes(billingMode)) return { available:false };
+    await carryAdminAccess(db,userId);
     const access = await db.prepare('SELECT expires_at,version FROM patrac_access WHERE user_id=? AND environment=?').bind(userId,billingMode).first();
     const orders = await db.prepare('SELECT id,months,amount,created_at,paid_at,access_until FROM patrac_orders WHERE user_id=? AND environment=? ORDER BY created_at DESC LIMIT 50').bind(userId,billingMode).all();
-    return {available:true,environment:billingMode,expiresAt:access?.expires_at||null,version:access?.version||0,active:(access?.expires_at||0)>now(),orders:orders.results};
+    const liveAccess=billingMode==='test'?await db.prepare("SELECT expires_at FROM patrac_access WHERE user_id=? AND environment='live'").bind(userId).first():access;
+    return {available:true,liveExpiresAt:liveAccess?.expires_at||null,environment:billingMode,expiresAt:access?.expires_at||null,version:access?.version||0,active:(access?.expires_at||0)>now(),orders:orders.results};
   }
   async function grantAccess(actor,user,input) {
     if (!['test','live'].includes(billingMode)) throw new AdminError('Správa přístupu zatím není zapnutá.',503);
@@ -57,7 +60,8 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       if(row.actor_id!==actor.id||row.target_id!==user.id||row.action!=='access'||row.status!=='success'||data.months!==input.months||data.reason!==reason||data.environment!==billingMode) throw new AdminError('Identifikátor změny byl již použit.',409,'ADMIN_CONFLICT');
       return {ok:true,message:'Toto prodloužení již bylo uloženo. Přístup se nepřičetl znovu.'};
     }
-    const previous=await repeated();if(previous)return previous;
+    const previous=await repeated();if(previous){if(billingMode==='test')await carryAdminAccess(db,user.id);return previous;}
+    if(billingMode==='live')await carryAdminAccess(db,user.id);
     await db.prepare('INSERT OR IGNORE INTO patrac_access(user_id,environment) VALUES(?,?)').bind(user.id,billingMode).run();
     const access=await db.prepare('SELECT expires_at,version FROM patrac_access WHERE user_id=? AND environment=?').bind(user.id,billingMode).first();
     if(access.version!==input.version)throw new AdminError('Platnost přístupu mezitím změnila platba nebo jiný správce. Obnovte detail účtu.',409,'ADMIN_CONFLICT');
@@ -74,6 +78,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
        .bind(until,user.id,billingMode,input.version,id,details),
     ]);
     if(!results[0].meta.changes){const duplicate=await repeated();if(duplicate)return duplicate;throw new AdminError('Změnu nelze uložit. Obnovte detail nebo chvíli počkejte a opakujte akci.',409,'ADMIN_CONFLICT');}
+    if(billingMode==='test')await carryAdminAccess(db,user.id);
     return {ok:true,message:'Přístup byl prodloužen o '+input.months+' měsíců. Platba se tímto nevytváří.'};
   }
   return {

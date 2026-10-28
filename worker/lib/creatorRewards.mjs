@@ -1,3 +1,4 @@
+import {carryAdminAccess} from './adminAccessCarryover.mjs';
 import {addMonths,billingEnvironment} from './billing.mjs';
 import {GameError} from './patrac-engine.mjs';
 export const REWARD_THRESHOLD=100,REWARD_MONTHS=2;
@@ -17,6 +18,7 @@ export function createCreatorRewards({db,env,now=Date.now}){
   const count=completed.completed,last=await db.prepare('SELECT COALESCE(MAX(milestone),0) AS milestone FROM patrac_creator_rewards WHERE code=? AND environment=?').bind(code,environment).first();
   let granted=0;
   for(let milestone=last.milestone+100;milestone<=count&&milestone<=last.milestone+1000;milestone+=100){
+   if(environment==='live')await carryAdminAccess(db,game.userId);
    await db.prepare('INSERT OR IGNORE INTO patrac_access(user_id,environment) VALUES(?,?)').bind(game.userId,environment).run();
    let done=false;
    for(let retry=0;retry<8;retry++){
