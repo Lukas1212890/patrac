@@ -71,3 +71,9 @@
 .p-community-pin.is-abandoned,.p-discovery-icon.is-abandoned{background:#d4d8df;color:#4b5563;border-color:#f5f6f8}.p-community-pin.is-completed,.p-discovery-icon.is-completed{background:#15803d;color:#fff}.p-discovery-icon.is-abandoned,.p-discovery-icon.is-completed{font-size:24px;font-weight:800}
 
 .p-map-tools button.is-filtered{background:#dcfa63;border-color:#aac635;color:#122053}.p-map-filter-choice{display:flex;align-items:center;gap:12px;padding:13px 0;font-weight:600;cursor:pointer}.p-map-filter-choice input{width:22px;height:22px;accent-color:#2348df;flex:none}.p-map-filter-all{border-bottom:1px solid #cbd6e8;margin-bottom:8px}.p-map-filter-symbol{font-size:23px;width:25px;text-align:center}.p-map-filter-note{font-size:13px;color:#596b8e}@media(max-width:600px){.p-map-locate-label{display:none}.p-map-tools{flex-wrap:wrap}.p-map-tools button{white-space:nowrap}.p-map-tools button:first-child{padding:10px}}
+
+/* Compact visible badges inside accessible 44px touch targets. */
+.p-community-pin,.p-community-pin.is-abandoned,.p-community-pin.is-completed{width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:none;color:#122053}
+.p-community-pin .p-pin-badge{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:2px solid #fff;border-radius:10px;background:#dcfa63;box-shadow:0 2px 6px #12205335;font-size:19px;line-height:1;font-weight:750;pointer-events:none}
+.p-community-pin.is-abandoned .p-pin-badge{background:#d4d8df;color:#4b5563}.p-community-pin.is-completed .p-pin-badge{background:#15803d;color:#fff}
+.p-community-pin.is-cluster .p-pin-badge{width:34px;height:34px;border-radius:50%;background:#2348df;color:#fff;font-size:13px;font-variant-numeric:tabular-nums}.p-cluster-list{max-height:50dvh;margin:12px 0}

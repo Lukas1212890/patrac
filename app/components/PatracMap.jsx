@@ -1,4 +1,5 @@
 'use client';
+import {clusterMapPoints,clusterNeedsList} from '../lib/mapClusters.mjs';
 import {mapPlayStatus} from '../lib/mapPlayStatus.mjs';
 import { useEffect, useRef, useState } from 'react';
 import { getBaseMapConfig, getNavigationZoom } from '../lib/mapConfig';
@@ -49,7 +50,7 @@ export default function PatracMap({ target, position, onPick, heading = null }) 
 }
 
 // Raster fallback retains a working map on devices without a WebGL context.
-export function RasterMap({ target, position, onPick, baseMap, navigation = false, heading = null, mapFull = false, overview = false, points = [], onPointSelect, onBounds }) {
+export function RasterMap({ target, position, onPick, baseMap, navigation = false, heading = null, mapFull = false, overview = false, points = [], onPointSelect, onPointGroup, onBounds }) {
   const [center, setCenter] = useState(target || { lat: 49.8, lng: 15.5 }), [zoom, setZoom] = useState(overview ? 6 : target ? 16 : 6), [width, setWidth] = useState(500);
   const [height, setHeight] = useState(320);
   const box = useRef(null), drag = useRef(null);
@@ -78,13 +79,14 @@ export function RasterMap({ target, position, onPick, baseMap, navigation = fals
   }
   const pointStyle = point => { const pixel = project(point, viewZoom); return { position: 'absolute', left: pixel.x - origin.x, top: pixel.y - origin.y, transform: 'translate(-50%,-50%)', pointerEvents: 'none' }; };
   const a = position ? project(position, viewZoom) : null, b = target ? project(target, viewZoom) : null;
+  const groups=clusterMapPoints(points,point=>project(point,viewZoom));
   const zoneRadius = target ? 7.5 / (156543.033928 * Math.cos(target.lat * Math.PI / 180) / 2 ** viewZoom) : 0;
   return <div className="p-raster-map" data-patrac-map-gestures="true" ref={box} role="application" aria-label={onPick ? 'Mapa: přetáhněte pro posun, klepněte pro výběr' : 'Mapa cíle'}
     onPointerDown={e => { if (navigation || e.target.closest('button,a')) return; drag.current = { x: e.clientX, y: e.clientY }; e.currentTarget.setPointerCapture(e.pointerId); }}
     onPointerUp={e => { const start = drag.current; drag.current = null; if (!start) return; const dx = e.clientX - start.x, dy = e.clientY - start.y; if (Math.hypot(dx, dy) > 6) setCenter(unproject(p.x - dx, p.y - dy, zoom)); else if (onPick) { const bounds = box.current.getBoundingClientRect(); onPick(unproject(origin.x + e.clientX - bounds.left, origin.y + e.clientY - bounds.top, zoom)); } }}>
     <div className="p-raster-content" style={{ position: 'absolute', inset: 0, transform: navigation ? `rotate(${-(heading || 0)}deg)` : undefined, transition: navigation ? 'transform .18s linear' : undefined }}>{tiles}
       {navigation && <svg className="p-raster-route" width={width} height={height} aria-label="Modrá spojnice k cíli a oranžová hledací oblast" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>{a && b && <line x1={a.x - origin.x} y1={a.y - origin.y} x2={b.x - origin.x} y2={b.y - origin.y} stroke="#1687ff" strokeWidth="6"/>}{b && <circle cx={b.x - origin.x} cy={b.y - origin.y} r={zoneRadius} fill="#ff9f0a" fillOpacity=".3" stroke="#ff9f0a" strokeWidth="2"/>}</svg>}
-      {points.map(point=><button type="button" className={"p-community-pin "+mapPlayStatus(point.playStatus).className} key={point.code} title={point.name+" · "+mapPlayStatus(point.playStatus).label} aria-label={'Otevřít výpravu '+point.name+" · "+mapPlayStatus(point.playStatus).label} style={{...pointStyle(point),pointerEvents:'auto'}} onClick={()=>onPointSelect?.(point.code)}>{mapPlayStatus(point.playStatus).symbol}</button>)}
+      {groups.map(group=>{const item=group.items[0],clustered=group.items.length>1,status=mapPlayStatus(item.playStatus);return <button type="button" className={'p-community-pin '+(clustered?'is-cluster':status.className)} key={group.key} aria-label={clustered?`${group.items.length} výprav — přiblížit nebo vybrat`:'Otevřít výpravu '+item.name+' · '+status.label} style={{position:'absolute',left:group.x-origin.x,top:group.y-origin.y,transform:'translate(-50%,-50%)',pointerEvents:'auto'}} onClick={()=>{if(!clustered){onPointSelect?.(item.code);return;}if(clusterNeedsList(group.items,viewZoom,base.maxzoom))onPointGroup?.(group.items);else{setCenter(unproject(group.x,group.y,viewZoom));setZoom(z=>Math.min(base.maxzoom,z+2));}}}><span className="p-pin-badge" aria-hidden="true">{clustered?group.items.length:status.symbol}</span></button>;})}
       {!overview && !navigation && target && <div className="p-target-marker" style={pointStyle(target)}>✦</div>}{position && <div className={navigation ? 'p-stopik-user-dot' : 'p-user-marker'} style={pointStyle(position)}/>}
     </div>
     {!navigation && <div className="p-raster-controls"><button type="button" aria-label="Přiblížit mapu" onClick={() => setZoom(z => Math.min(base.maxzoom, z + 1))}>+</button><button type="button" aria-label="Oddálit mapu" onClick={() => setZoom(z => Math.max(2, z - 1))}>−</button><button type="button" aria-label="Zobrazit cíl" onClick={() => { if (target) setCenter(target); }}>◎</button></div>}
