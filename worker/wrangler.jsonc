@@ -7,7 +7,7 @@
     {
       "binding": "DB",
       "database_name": "patrac",
-      "database_id": "REPLACE_WITH_NEW_PATRAC_DATABASE_ID",
+      "database_id": "2854f53b-4640-4aad-8089-343f5b954a97",
       "migrations_dir": "../drizzle"
     }
   ],
