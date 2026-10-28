@@ -20,7 +20,7 @@ export async function deleteAsAdmin({db,bucket,actor,user,input,now,ErrorType}){
    db.prepare(`INSERT OR IGNORE INTO patrac_admin_audit(id,actor_id,target_id,action,details,status,created_at)
     SELECT ?,?,?,'delete-expedition',?,'pending',? WHERE EXISTS(SELECT 1 FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND c.creator_id=? AND e.version=? AND json_extract(e.payload,'$.adminDeletion') IS NULL AND NOT EXISTS(${activePlayersQuery('e.code')}))
     AND (SELECT COUNT(*) FROM patrac_admin_audit WHERE actor_id=? AND created_at>?)<30`).bind(id,actor.id,user.id,details,stamp,code,user.id,version,actor.id,stamp-60000),
-   db.prepare(`UPDATE patrac_expeditions SET payload=json_set(payload,'$.status','deleting','$.adminDeletion',?),version=version+1
+   db.prepare(`UPDATE patrac_expeditions SET payload=json_set(payload,'$.adminDeletion',?),version=version+1
     WHERE code=? AND version=? AND NOT EXISTS(${activePlayersQuery('patrac_expeditions.code')}) AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=? AND details=? AND status='pending')`).bind(id,code,version,id,details),
   ]);
   if(!result[0].meta.changes)throw new ErrorType('Smazání nelze zahájit. Obnovte detail nebo chvíli počkejte.',409,'ADMIN_CONFLICT');
@@ -28,12 +28,12 @@ export async function deleteAsAdmin({db,bucket,actor,user,input,now,ErrorType}){
  }
  if(!row&&(await db.prepare('SELECT status FROM patrac_admin_audit WHERE id=?').bind(id).first())?.status==='success')return{ok:true,message:'Výprava už byla smazána. Tvůrce má oznámení s důvodem.'};
  if(!row||JSON.parse(row.payload).adminDeletion!==id)throw new ErrorType('Smazání se mezitím změnilo. Obnovte detail.',409,'ADMIN_CONFLICT');
- try{await removeExpedition(db,bucket,{code,userId:user.id,version:row.version,confirmation:code});}
+ try{await removeExpedition(db,bucket,{code,userId:user.id,version:row.version,confirmation:code,now:now()});}
  catch(error){
   // A competing retry may already have completed the same transaction.
   if((await db.prepare('SELECT status FROM patrac_admin_audit WHERE id=?').bind(id).first())?.status==='success')return{ok:true,message:'Výprava byla smazána. Tvůrce má oznámení s důvodem.'};
   await db.prepare("UPDATE patrac_admin_audit SET status='cleanup_pending' WHERE id=? AND status<>'success'").bind(id).run();
   if(error instanceof GameError)throw new ErrorType(error.message,error.status,'ADMIN_DELETE_PENDING');throw error;
  }
- return{ok:true,message:'Výprava byla smazána včetně fotografií a výsledků. Tvůrce má oznámení s důvodem.'};
+ return{ok:true,message:'Výprava zůstává hratelná a odstraní se po 72 hodinách.'};
 }

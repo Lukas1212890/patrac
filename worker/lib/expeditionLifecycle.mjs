@@ -1,6 +1,7 @@
 import {activePlayerCount,activePlayersQuery,activePlayMessage} from './activeExpeditionPlayers.mjs';
 import { GameError } from './patrac-engine.mjs';
 import {limitsReady,limitSQL} from './creatorLimits.mjs';
+export const DELETION_DELAY_MS=72*60*60*1000;
 export const EXPEDITION_LIMIT=3;
 export const PUBLIC_EXPEDITION_LIMIT=2;
 export const expeditionCountSQL="SELECT COUNT(*) AS total FROM patrac_creator_games c JOIN patrac_expeditions e ON e.code=c.code WHERE c.creator_id=? AND COALESCE(json_extract(e.payload,'$.visibility'),'private')='private'";
@@ -16,16 +17,23 @@ export async function reserveExpedition(db,{code,ownerHash,payload,userId,now}){
    .bind(userId,now,code,ownerHash),
  ]);
 }
-export async function removeExpedition(db,bucket,{code,userId,version,confirmation}){
+export async function removeExpedition(db,bucket,{code,userId,version,confirmation,now=Date.now()}){
  if(confirmation!==code||!Number.isSafeInteger(version)||version<0)throw new GameError('Pro smazání opište kód výpravy.');
  const row=await db.prepare('SELECT e.* FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND c.creator_id=?').bind(code,userId).first();
  if(!row)throw new GameError('Výprava nebyla nalezena nebo k ní nemáte přístup.',404);
  if(row.version!==version)throw new GameError('Výpravu mezitím změnilo jiné okno. Obnovte ji a smazání potvrďte znovu.',409);
  if(await activePlayerCount(db,code))throw new GameError(activePlayMessage,409);
+ const pending=JSON.parse(row.payload);
+ if(!Number.isFinite(pending.deleteAt)){
+  const result=await db.prepare(`UPDATE patrac_expeditions SET payload=json_set(payload,'$.deleteAt',?),version=version+1 WHERE code=? AND version=? AND NOT EXISTS(${activePlayersQuery('patrac_expeditions.code')})`).bind(now+DELETION_DELAY_MS,code,row.version).run();
+  if(!result.meta.changes)throw new GameError('Průběh se změnil. Obnovte výpravu.',409);
+  return {ok:true,scheduled:true,deleteAt:now+DELETION_DELAY_MS};
+ }
+ if(now<pending.deleteAt)return {ok:true,scheduled:true,deleteAt:pending.deleteAt};
  let revision=row.version;
  if(JSON.parse(row.payload).status!=='deleting'){
-  const result=await db.prepare(`UPDATE patrac_expeditions SET payload=json_set(payload,'$.status','deleting'),version=version+1
-   WHERE code=? AND version=? AND EXISTS(SELECT 1 FROM patrac_creator_games WHERE code=? AND creator_id=?) AND NOT EXISTS(${activePlayersQuery('patrac_expeditions.code')})`).bind(code,revision,code,userId).run();
+  const result=await db.prepare(`UPDATE patrac_expeditions SET payload=json_set(payload,'$.status','deleting','$.deleteAt',?,'$.published',json('false')),version=version+1
+   WHERE code=? AND version=? AND EXISTS(SELECT 1 FROM patrac_creator_games WHERE code=? AND creator_id=?) AND NOT EXISTS(${activePlayersQuery('patrac_expeditions.code')})`).bind(now+DELETION_DELAY_MS,code,revision,code,userId).run();
   if(!result.meta.changes)throw new GameError('Průběh se změnil. Obnovte výpravu.',409);
   revision++;
  }
@@ -53,4 +61,9 @@ export async function removeExpedition(db,bucket,{code,userId,version,confirmati
  ]);
  if(!results[results.length-1].meta.changes)throw new GameError('Mazání se nepodařilo dokončit. Obnovte přehled a opakujte je.',409);
  return {ok:true,deleted:true};
+}
+
+export async function sweepDeletedExpeditions(db,bucket,now=Date.now()){
+ const rows=await db.prepare("SELECT e.code,e.version,c.creator_id FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE json_extract(e.payload,'$.deleteAt')<=? LIMIT 50").bind(now).all();
+ for(const row of rows.results){try{await removeExpedition(db,bucket,{code:row.code,userId:row.creator_id,version:row.version,confirmation:row.code,now});}catch{console.error('Expedition cleanup deferred');}}
 }

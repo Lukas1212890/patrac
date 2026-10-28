@@ -13,7 +13,7 @@ export function validatePublicInfo(value,routeInfo){
  return{description:info.description.trim(),difficulty:info.difficulty,...routeInfo};
 }
 export async function requirePublicAccess(db,env,userId,stamp=Date.now()){const access=await accessState(db,userId,billingEnvironment(env),stamp);if(!access.active)throw new GameError('Veřejné výpravy jsou dostupné s aktivním předplatným. Vyberte si období v profilu.',402);return access;}
-const CARD=`${routeEstimateSQL} AS routePayload,e.code,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.publicInfo.description') AS description,
+const CARD=`json_extract(e.payload,'$.deleteAt') AS deleteAt,${routeEstimateSQL} AS routePayload,e.code,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.publicInfo.description') AS description,
  json_extract(e.payload,'$.publicInfo.difficulty') AS difficulty,json_extract(e.payload,'$.publicInfo.distanceKm') AS distanceKm,
  json_extract(e.payload,'$.publicInfo.estimatedMinutes') AS estimatedMinutes,json_extract(e.payload,'$.stations[0].lat') AS lat,
  json_extract(e.payload,'$.stations[0].radius') AS startRadius,json_extract(e.payload,'$.stations[0].lng') AS lng,json_array_length(json_extract(e.payload,'$.stations')) AS totalStations,
