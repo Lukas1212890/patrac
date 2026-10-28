@@ -2,6 +2,7 @@ import { storeHintPhotos, removeReplacedPhotos } from './photoStorage.mjs';
 import { allowedOrigin } from '../origin.mjs';
 import { creatorIdentity } from './creator-server';
 import { requirePaidAccess } from './billing.mjs';
+import { EXPEDITION_LIMIT, expeditionCount, reserveExpedition, removeExpedition } from './expeditionLifecycle.mjs';
 import { env } from 'cloudflare:workers';
 import { GameError, validateExpedition, newTeam, applyAction, teamProjection, stationTimings, score, normalizeAnswer } from './patrac-engine.mjs';
 type Row = { code: string; owner_hash: string; payload: string; version: number };
@@ -58,6 +59,7 @@ async function identity(request: Request, row: Row): Promise<any> {
 export async function createExpedition(request: Request) {
   const account = await creatorIdentity(request, true);
   await requirePaidAccess(env, account!.id);
+  if (await expeditionCount(db(), account!.id) >= EXPEDITION_LIMIT) throw new GameError('Na účtu můžete mít nejvýše 3 uložené výpravy. Pro novou nejprve některou smažte včetně dokončených.',409);
   const input = await body(request), config = validateExpedition(input);
   const ownerToken = token(), ownerHash = await hash(ownerToken);
   const game = { ...config, status: 'waiting', startedAt: null, createdAt: Date.now() };
@@ -66,16 +68,16 @@ export async function createExpedition(request: Request) {
     const code = Array.from(crypto.getRandomValues(new Uint8Array(7)), v => alphabet[v % alphabet.length]).join('');
     // Keep photos in this application's private bucket, never in a shared Stopař store.
     const stored = await storePhotos(structuredClone(game), code);
-    const results = await db().batch([
-      db().prepare('INSERT OR IGNORE INTO patrac_expeditions (code, owner_hash, payload, version) VALUES (?, ?, ?, 0)').bind(code, ownerHash, JSON.stringify(stored)),
-      db().prepare('INSERT OR IGNORE INTO patrac_creator_games (code, creator_id, linked_at) SELECT code, ?, ? FROM patrac_expeditions WHERE code = ? AND owner_hash = ?').bind(account!.id, Date.now(), code, ownerHash),
-    ]);
-    if (results[0].meta.changes) return json({ code, ownerToken }, 201);
+    const results = await reserveExpedition(db(), {code, ownerHash, payload:JSON.stringify(stored), userId:account!.id, now:Date.now()});
+    if (results[1].meta.changes) return json({ code, ownerToken }, 201);
+    try { await removeReplacedPhotos(stored,{stations:[]},code,env.BUCKET); } catch { console.warn('Patrac rejected creation photo cleanup failed'); }
+    if (await expeditionCount(db(),account!.id)>=EXPEDITION_LIMIT) throw new GameError('Na účtu už máte 3 výpravy. Před vytvořením nové některou smažte.',409);
   }
   throw new GameError('Kód se nepodařilo vytvořit. Zkuste to znovu.', 503);
 }
 export async function viewExpedition(request: Request, code: string) {
   const { row, game } = await getGame(code), who = await identity(request, row), now = Date.now();
+  if (game.status === 'deleting' && who.role !== 'owner') throw new GameError('Organizátor tuto výpravu odstranil.',410);
   const meta = { code, name: game.name, mode: game.mode, status: game.status, startedAt: game.startedAt, totalStations: game.stations.length };
   if (who.role === 'owner') {
     const rows = await db().prepare('SELECT payload FROM patrac_teams WHERE code = ?').bind(code).all<any>();
@@ -96,12 +98,17 @@ export async function viewExpedition(request: Request, code: string) {
       const original = game.stations[who.team.index].hints.find((h: any) => h.id === hint.id);
       return { ...hint, content: (await revealPhoto(original)).content };
     }));
-    return json({ role: 'team', game: meta, team: projection, counts, now });
+    return json({ role: 'team', game: { ...meta, startedAt: who.team.startedAt ?? meta.startedAt }, team: projection, counts, now });
   }
   return json({ role: 'guest', game: meta, now });
 }
 export async function changeExpedition(request: Request, code: string) {
   const input = await body(request); const { row, game } = await getGame(code);
+  if (input.action === 'delete') {
+    const account = await creatorIdentity(request,true);
+    return json(await removeExpedition(db(),env.BUCKET,{code,userId:account!.id,version:input.version,confirmation:input.confirmation}));
+  }
+  if (game.status === 'deleting') throw new GameError('Výprava se právě maže.',410);
   if (input.action === 'join') {
     if (!/^[a-f0-9]{64}$/.test(input.teamToken || '')) throw new GameError('Neplatný klíč týmu.');
     const name = typeof input.name === 'string' ? input.name.trim() : '';
@@ -109,11 +116,11 @@ export async function changeExpedition(request: Request, code: string) {
     const tokenHash = await hash(input.teamToken);
     const existing = await db().prepare('SELECT id FROM patrac_teams WHERE code = ? AND token_hash = ?').bind(code, tokenHash).first();
     if (existing) return json({ ok: true });
-    if (game.status !== 'waiting') throw new GameError('Výprava už odstartovala. Nové týmy se nepřipojují.', 409);
-    const team = newTeam(crypto.randomUUID(), name, Date.now());
-    const result = await db().prepare("INSERT OR IGNORE INTO patrac_teams (id, code, token_hash, name_key, payload, version) SELECT ?, ?, ?, ?, ?, 0 WHERE (SELECT json_extract(payload, '$.status') FROM patrac_expeditions WHERE code = ?) = 'waiting' AND (SELECT COUNT(*) FROM patrac_teams WHERE code = ?) < 30")
+    if (!['waiting','running'].includes(game.status)) throw new GameError('Výprava není dostupná pro nové týmy.',409);
+    const team = { ...newTeam(crypto.randomUUID(), name, Date.now()), ...(game.status === 'running' ? {startedAt:Date.now()} : {}) };
+    const result = await db().prepare("INSERT OR IGNORE INTO patrac_teams (id, code, token_hash, name_key, payload, version) SELECT ?, ?, ?, ?, ?, 0 WHERE (SELECT json_extract(payload, '$.status') FROM patrac_expeditions WHERE code = ?) IN ('waiting','running') AND (SELECT COUNT(*) FROM patrac_teams WHERE code = ? AND json_extract(payload, '$.finishedAt') IS NULL) < 30")
       .bind(team.id, code, tokenHash, normalizeAnswer(name), JSON.stringify(team), code, code).run();
-    if (!result.meta.changes) throw new GameError('Název týmu je obsazený, výprava již běží nebo je plná (30 týmů).', 409);
+    if (!result.meta.changes) throw new GameError('Název týmu je obsazený nebo je výprava plná (30 aktivních týmů).', 409);
     return json({ ok: true }, 201);
   }
   const who = await identity(request, row);
@@ -132,7 +139,10 @@ export async function changeExpedition(request: Request, code: string) {
     const sql = "UPDATE patrac_expeditions SET payload = ?, version = version + 1 WHERE code = ? AND version = ? AND json_extract(payload, '$.status') = 'waiting'";
     const values = [JSON.stringify(next), code, row.version];
     const result = await db().prepare(sql).bind(...values).run();
-    if (!result.meta.changes) throw new GameError('Průběh se změnil. Obnovte výpravu.', 409);
+    if (!result.meta.changes) {
+      if(input.action==='save')try { await removeReplacedPhotos(next,game,code,env.BUCKET); } catch { console.warn('Patrac rejected save photo cleanup failed'); }
+      throw new GameError('Průběh se změnil. Obnovte výpravu.',409);
+    }
     if (input.action === 'save') {
       try { await removeReplacedPhotos(game, next, code, env.BUCKET); } catch { console.warn('Patrac replaced photo cleanup failed'); }
     }

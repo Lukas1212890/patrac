@@ -273,3 +273,5 @@ html[data-patrac-home-locked] .p-player-travelling>.p-travel-bottom{touch-action
 .p-station-editor[hidden]{display:none}.p-station-editor,.p-add-next-station,.p-station-ready{scroll-margin-top:110px}.p-station-save{margin-top:26px;padding-top:22px;border-top:1px solid #c8d5ee;display:grid;gap:12px}.p-station-save>.p-primary,.p-add-next-station{width:100%;min-height:52px}.p-station-save .p-small{line-height:1.6}.p-station-saved{font-size:12px;line-height:1.7;margin:16px 0;color:#344974}.p-station-ready{display:grid;gap:16px;align-content:start}.p-station-ready>svg{color:#2348df}.p-station-ready h2{font-size:26px}
 
 .p-editor .p-delete-station{color:#9b3030;border-color:#d7a8a8;background:#fff5f3;min-height:48px}.p-start-panel .p-edit-expedition{width:100%;margin-top:12px}
+
+.p-delete-game-panel{margin-top:20px}.p-delete-game-panel h3{font-size:23px;margin-bottom:12px}.p-delete-game-panel .p-secondary{width:100%;margin-top:16px}.p-app .p-delete-expedition{color:#9b3030;border-color:#d7a8a8;background:#fff5f3;min-height:48px}.p-delete-game-dialog>svg{color:#9b3030}.p-delete-game-dialog .p-label{margin-top:16px}

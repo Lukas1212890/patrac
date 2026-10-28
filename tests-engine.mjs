@@ -16,3 +16,12 @@ test('travel and puzzle times partition the real elapsed time without duplicatio
 test('treasure mode has no hints and penalties do not affect score',()=>{const g={...game(),mode:'treasure'};let t=applyAction(g,newTeam('a','Vlci',at),{action:'arrive',index:0,position:position(at+10000)},at+10000);assert.deepEqual(teamProjection(g,t,at).station.hints,[]);assert.throws(()=>applyAction(g,t,{action:'hint',index:0,hintId:'h0'},at+11000));assert.equal(score(g,{...t,penaltyMs:60000},at+20000).totalMs,20000);});
 test('final time freezes after finish and earlier physical arrival need not win',()=>{const g=game();const first={...newTeam('a','A',at),finishedAt:at+60000,penaltyMs:120000};const second={...newTeam('b','B',at),finishedAt:at+90000};assert.ok(score(g,first,at+999999).totalMs>score(g,second,at+999999).totalMs);assert.equal(score(g,second,at+999999).elapsedMs,90000);});
 test('wrong answers are rate-limited and cannot advance the team',()=>{const g=game();let t=applyAction(g,newTeam('a','Vlci',at),{action:'arrive',index:0,position:position(at+10000)},at+10000);t=applyAction(g,t,{action:'answer',index:0,answer:'špatně'},at+11000);assert.equal(t.index,0);assert.equal(t.wrongAnswer,true);assert.throws(()=>applyAction(g,t,{action:'answer',index:0,answer:'stín'},at+12000));});
+
+test('late teams use their own start and finish times while the published route stays open',()=>{
+ const g=game(),t={...newTeam('later','Pozdější tým',at+100000),startedAt:at+100000};
+ assert.equal(score(g,t,at+115000).elapsedMs,15000);
+ const arrived=applyAction(g,t,{action:'arrive',index:0,position:position(at+110000)},at+110000);
+ assert.equal(stationTimings(g,arrived)[0].travelMs,10000);
+ assert.equal(score(g,{...t,finishedAt:at+120000},at+500000).elapsedMs,20000);
+ assert.equal(g.status,'running');
+});

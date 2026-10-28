@@ -66,7 +66,8 @@ export function applyAction(game, team, action, now) {
   return next;
 }
 export function score(game, team, now) {
-  const elapsed = game.startedAt ? Math.max(0, (team.finishedAt || now) - game.startedAt) : 0;
+  const startedAt = team.startedAt ?? game.startedAt;
+  const elapsed = startedAt ? Math.max(0, (team.finishedAt || now) - startedAt) : 0;
   return { elapsedMs: elapsed, totalMs: elapsed + (game.mode === 'race' ? team.penaltyMs : 0) };
 }
 export function teamProjection(game, team, now) {
@@ -82,7 +83,7 @@ export function teamProjection(game, team, now) {
 export function stationTimings(game, team) {
   return game.stations.slice(0, team.index + (team.arrivedAt ? 1 : 0)).map((station, index) => {
     const arrive = team.events.find(e => e.type === 'arrive' && e.index === index), solve = team.events.find(e => e.type === 'solve' && e.index === index);
-    const previous = index === 0 ? game.startedAt : team.events.find(e => e.type === 'solve' && e.index === index - 1)?.at;
+    const previous = index === 0 ? (team.startedAt ?? game.startedAt) : team.events.find(e => e.type === 'solve' && e.index === index - 1)?.at;
     return { index, name: station.name, arrivedAt: arrive?.at, solvedAt: solve?.at,
       travelMs: arrive && previous ? arrive.at - previous : null, solveMs: solve && arrive ? solve.at - arrive.at : null,
       hints: team.events.filter(e => e.type === 'hint' && e.index === index) };

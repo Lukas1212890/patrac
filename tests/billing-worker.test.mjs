@@ -57,5 +57,26 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   assert.equal((await request('/api/expeditions/HJKLMNP',{action:'start'},token)).status,200);
   assert.equal((await request('/api/expeditions/HJKLMNP',{action:'save',game:waiting,version:1},token)).status,409);
 
+  // Finishing does not close the route, and a later team gets its own clock.
+  await db.prepare("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',?,'$.index',1) WHERE code=?").bind(Date.now()-1000,'HJKLMNP').run();
+  const lateJoin=await request('/api/expeditions/HJKLMNP',{action:'join',name:'Další skupina',teamToken:'c'.repeat(64)});assert.equal(lateJoin.status,201);
+  const late=await db.prepare("SELECT payload FROM patrac_teams WHERE code=? AND name_key=?").bind('HJKLMNP','dalsi skupina').first();assert.ok(JSON.parse(late.payload).startedAt>=stamp);
+  const profile=await(await request('/api/account',null,token)).json();assert.equal(profile.expeditionCount,2);assert.equal(profile.expeditionLimit,3);
+  // The final free slot is reserved atomically even from simultaneous requests.
+  const creations=await Promise.all([request('/api/expeditions',edited,token),request('/api/expeditions',edited,token)]);
+  assert.deepEqual(creations.map(r=>r.status).sort(),[201,409]);assert.equal((await(await request('/api/account',null,token)).json()).expeditionCount,3);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'HJKLMNP'})).status,401);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'WRONG'} ,token)).status,400);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:0,confirmation:'HJKLMNP'},token)).status,409);
+  const bucket=await mf.getR2Bucket('BUCKET');await bucket.put('hints/HJKLMNP/old-orphan','image');await bucket.put('hints/ABCDEFG/keep','other-image');
+  await db.prepare("UPDATE patrac_access SET expires_at=0 WHERE user_id='user'").run();
+  const deleted=await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'HJKLMNP'},token);assert.equal(deleted.status,200,await deleted.clone().text());
+  assert.equal(await bucket.head('hints/HJKLMNP/old-orphan'),null);assert.ok(await bucket.head('hints/ABCDEFG/keep'));
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_teams WHERE code=?').bind('HJKLMNP').first()).n,0);
+  assert.equal((await(await request('/api/account',null,token)).json()).expeditionCount,2);
+  assert.equal((await request('/api/expeditions/HJKLMNP',null,token)).status,404);
+  await db.prepare("UPDATE patrac_access SET expires_at=? WHERE user_id='user'").bind(Date.now()+3600000).run();
+  assert.equal((await request('/api/expeditions',edited,token)).status,201);
+
  }finally{await mf.dispose();}
 });
