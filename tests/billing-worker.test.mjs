@@ -13,7 +13,7 @@ test('real Worker requires account and paid access, verifies webhook signature, 
  try{
   assert.equal((await request('/api/billing')).status,401);
   const db=await mf.getD1Database('DB');
-  for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0004_billing.sql'])for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run();
+  for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0003_account_admin.sql','0004_billing.sql'])for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run();
   const stamp=Date.now(),password='native-worker-billing-test-password',hash=await hashPassword(password);
   await db.prepare("INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES('user','Tester','user@example.com',1,?,?)").bind(stamp,stamp).run();
   await db.prepare("INSERT INTO patrac_auth_account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES('user','user','credential','user',?,?,?)").bind(hash,stamp,stamp).run();
@@ -35,5 +35,14 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
   const signature=Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(time+'.'+raw))).toString('hex');
   const hook=await mf.dispatchFetch('http://localhost:8790/api/billing/webhook',{method:'POST',headers:{'Stripe-Signature':`t=${time},v1=${signature}`},body:raw});assert.equal(hook.status,200);
+  const grant={action:'access',id:'user',environment:'test',months:3,reason:'Native Worker test grant',version:0,requestKey:crypto.randomUUID()};
+  assert.equal((await request('/api/admin/users',grant,token)).status,403);
+  await db.prepare('INSERT INTO patrac_admin_accounts VALUES(?,?)').bind('user',Date.now()).run();
+  const detail=await request('/api/admin/users/user',null,token);assert.equal(detail.status,200);assert.equal((await detail.json()).billing.environment,'test');
+  const granted=await request('/api/admin/users',grant,token);assert.equal(granted.status,200,await granted.clone().text());
+  assert.equal((await request('/api/admin/users',grant,token)).status,200);
+  const paidState=await(await request('/api/billing',null,token)).json();assert.equal(paidState.active,true);
+  const updated=await(await request('/api/admin/users/user',null,token)).json();assert.equal(updated.billing.version,1);assert.equal(updated.audit.filter(a=>a.action==='access').length,1);
+
  }finally{await mf.dispose();}
 });

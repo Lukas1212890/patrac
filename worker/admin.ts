@@ -1,9 +1,11 @@
 import { env } from 'cloudflare:workers';
 import { accountAuth } from './auth';
+import { billingEnvironment } from './lib/billing.mjs';
 import { createAdminService, AdminError } from './lib/adminService.mjs';
 const APP = 'https://patrac.stopik.cz';
 const service = () => createAdminService({
   db: env.DB,
+  billingMode: env.PATRAC_BILLING_ENABLED === 'true' ? billingEnvironment(env) : '',
   getSession: async (request: Request) => {
     const token = request.headers.get('x-patrac-account');
     if (!token || token.length > 1024) return null;

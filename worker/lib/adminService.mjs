@@ -1,10 +1,11 @@
+import { addMonths } from './billing.mjs';
 export class AdminError extends Error {
   constructor(message, status = 400, code = 'ADMIN_ERROR') { super(message); this.status = status; this.code = code; }
 }
 const FIELDS = 'id, name, email, emailVerified, createdAt, updatedAt';
 const FRESH_MS = 15 * 60 * 1000;
 const safeUser = u => ({ ...u, emailVerified: !!u.emailVerified });
-export function createAdminService({ db, getSession, sendReset, sendVerification, now = Date.now }) {
+export function createAdminService({ db, getSession, sendReset, sendVerification, billingMode = '', now = Date.now }) {
   async function requireAdmin(request, write = false) {
     const session = await getSession(request);
     if (!session?.user?.emailVerified) throw new AdminError('Přihlaste se ke správcovskému účtu.', 401, 'ADMIN_LOGIN_REQUIRED');
@@ -32,6 +33,45 @@ export function createAdminService({ db, getSession, sendReset, sendVerification
     return id;
   }
   async function finish(id, status) { await db.prepare('UPDATE patrac_admin_audit SET status = ? WHERE id = ?').bind(status, id).run(); }
+  async function billingDetail(userId) {
+    if (!['test','live'].includes(billingMode)) return { available:false };
+    const access = await db.prepare('SELECT expires_at,version FROM patrac_access WHERE user_id=? AND environment=?').bind(userId,billingMode).first();
+    const orders = await db.prepare('SELECT id,months,amount,created_at,paid_at,access_until FROM patrac_orders WHERE user_id=? AND environment=? ORDER BY created_at DESC LIMIT 50').bind(userId,billingMode).all();
+    return {available:true,environment:billingMode,expiresAt:access?.expires_at||null,version:access?.version||0,active:(access?.expires_at||0)>now(),orders:orders.results};
+  }
+  async function grantAccess(actor,user,input) {
+    if (!['test','live'].includes(billingMode)) throw new AdminError('Správa přístupu zatím není zapnutá.',503);
+    if (input.environment!==billingMode) throw new AdminError('Prostředí přístupu se změnilo. Obnovte detail účtu.',409,'ADMIN_CONFLICT');
+    if (![3,6,12].includes(input.months)||!Number.isSafeInteger(input.version)||input.version<0) throw new AdminError('Vyberte platné období přístupu.');
+    if (typeof input.reason!=='string'||input.reason.trim().length<3||input.reason.trim().length>240) throw new AdminError('Zadejte důvod změny (3 až 240 znaků).');
+    if (typeof input.requestKey!=='string'||!/^[-a-zA-Z0-9]{16,80}$/.test(input.requestKey)) throw new AdminError('Neplatný požadavek na přístup.');
+    const id='access_'+input.requestKey,reason=input.reason.trim();
+    async function repeated() {
+      const row=await db.prepare('SELECT * FROM patrac_admin_audit WHERE id=?').bind(id).first();
+      if(!row)return null;
+      const data=JSON.parse(row.details);
+      if(row.actor_id!==actor.id||row.target_id!==user.id||row.action!=='access'||row.status!=='success'||data.months!==input.months||data.reason!==reason||data.environment!==billingMode) throw new AdminError('Identifikátor změny byl již použit.',409,'ADMIN_CONFLICT');
+      return {ok:true,message:'Toto prodloužení již bylo uloženo. Přístup se nepřičetl znovu.'};
+    }
+    const previous=await repeated();if(previous)return previous;
+    await db.prepare('INSERT OR IGNORE INTO patrac_access(user_id,environment) VALUES(?,?)').bind(user.id,billingMode).run();
+    const access=await db.prepare('SELECT expires_at,version FROM patrac_access WHERE user_id=? AND environment=?').bind(user.id,billingMode).first();
+    if(access.version!==input.version)throw new AdminError('Platnost přístupu mezitím změnila platba nebo jiný správce. Obnovte detail účtu.',409,'ADMIN_CONFLICT');
+    const stamp=now(),until=addMonths(Math.max(stamp,access.expires_at),input.months);
+    const details=JSON.stringify({environment:billingMode,months:input.months,reason,oldExpiresAt:access.expires_at||null,expiresAt:until,operation:crypto.randomUUID()});
+    const results=await db.batch([
+      db.prepare(`INSERT OR IGNORE INTO patrac_admin_audit(id,actor_id,target_id,action,details,status,created_at)
+       SELECT ?,?,?,'access',?,'success',?
+       WHERE EXISTS(SELECT 1 FROM patrac_access WHERE user_id=? AND environment=? AND version=?)
+       AND (SELECT COUNT(*) FROM patrac_admin_audit WHERE actor_id=? AND created_at>?)<30`)
+       .bind(id,actor.id,user.id,details,stamp,user.id,billingMode,input.version,actor.id,stamp-60000),
+      db.prepare(`UPDATE patrac_access SET expires_at=?,version=version+1 WHERE user_id=? AND environment=? AND version=?
+       AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=? AND details=?)`)
+       .bind(until,user.id,billingMode,input.version,id,details),
+    ]);
+    if(!results[0].meta.changes){const duplicate=await repeated();if(duplicate)return duplicate;throw new AdminError('Změnu nelze uložit. Obnovte detail nebo chvíli počkejte a opakujte akci.',409,'ADMIN_CONFLICT');}
+    return {ok:true,message:'Přístup byl prodloužen o '+input.months+' měsíců. Platba se tímto nevytváří.'};
+  }
   return {
     async session(request) { return { user: await requireAdmin(request) }; },
     async list(request, query = {}) {
@@ -53,10 +93,11 @@ export function createAdminService({ db, getSession, sendReset, sendVerification
         FROM patrac_creator_games g JOIN patrac_expeditions e ON e.code = g.code WHERE g.creator_id = ? ORDER BY g.linked_at DESC LIMIT 100`).bind(id).all();
       const audit = await db.prepare(`SELECT a.action,a.status,a.created_at,a.details,u.email AS actor FROM patrac_admin_audit a
         LEFT JOIN patrac_auth_user u ON u.id = a.actor_id WHERE a.target_id = ? ORDER BY a.created_at DESC LIMIT 20`).bind(id).all();
-      return { user: safeUser(user), games: games.results, audit: audit.results };
+      return { user: safeUser(user), games: games.results, audit: audit.results, billing: await billingDetail(id) };
     },
     async change(request, input) {
       const actor = await requireAdmin(request, true), user = await target(input.id), action = input.action;
+      if (action === 'access') return grantAccess(actor,user,input);
       if (!['update','reset','verify','revoke'].includes(action)) throw new AdminError('Neznámá akce.');
       let name = user.name, email = user.email, emailChanged = false;
       if (action === 'update') {
