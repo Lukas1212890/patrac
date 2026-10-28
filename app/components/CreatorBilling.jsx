@@ -9,9 +9,15 @@ async function billingRequest(path='',data){
 }
 const date=value=>new Date(value).toLocaleString('cs-CZ',{dateStyle:'medium',timeStyle:'short'});
 export default function CreatorBilling({userId}){
- const [state,setState]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[returning,setReturning]=useState('');
+ const [state,setState]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[returning,setReturning]=useState(''),[refreshing,setRefreshing]=useState(false),[refreshMessage,setRefreshMessage]=useState('');
  const keys=useRef({});
- async function refresh(){try{setState(await billingRequest());setError('');}catch(e){setError(e.message);}}
+ async function refresh(){
+  if(refreshing)return;
+  setRefreshing(true);setRefreshMessage('');setError('');
+  try{const next=await billingRequest();setState(next);setRefreshMessage(next.enabled&&!next.available?'Stav obnoven. Platební brána zatím nemá oba potřebné klíče.':'Stav přístupu byl obnoven.');}
+  catch(e){setError(e.name==='TimeoutError'?'Server neodpovídá. Zkuste obnovit stav znovu.':e.message);}
+  finally{setRefreshing(false);}
+ }
  useEffect(()=>{let live=true;const result=new URLSearchParams(location.search).get('billing');setReturning(result||'');
   const load=async()=>{try{const data=await billingRequest();if(live){setState(data);setError('');}}catch(e){if(live)setError(e.message);}};
   load();const interval=result==='success'?setInterval(load,3000):null;const timer=interval?setTimeout(()=>clearInterval(interval),60000):null;
@@ -32,8 +38,10 @@ export default function CreatorBilling({userId}){
  {returning==='success'&&<p role="status">Platba byla dokončena v bráně. Aktivace se zobrazí po potvrzení serverem. Pokud ještě chybí, obnovte stav za chvíli.</p>}
  {returning==='cancel'&&<p>Platbu jste nedokončili. Můžete vybrat tarif znovu.</p>}
  {!state.available?<p className="p-small">Nákup přístupu právě připravujeme.</p>:<><p className="p-small">Jednorázová platba bez automatického obnovení. Obnovení prodlouží stávající přístup; po vypršení začne nové období zaplacením. Hráči se připojují zdarma.</p><div className="p-billing-plans">{state.plans.map(plan=><button className="p-secondary" disabled={busy} key={plan.months} onClick={()=>buy(plan.months)}><strong>{plan.months===3?'3 měsíce':plan.months===6?'6 měsíců':'12 měsíců'}</strong><span>{plan.amount/100} Kč</span></button>)}</div></>}
- <button className="p-text-button" disabled={busy} onClick={refresh}>Obnovit stav přístupu</button>
+
  {state.orders.some(o=>o.paid_at)&&<><h3>Zaplacená období</h3><ul>{state.orders.filter(o=>o.paid_at).map(o=><li key={o.id}>{date(o.paid_at)} · {o.months} měsíců · {o.amount/100} Kč</li>)}</ul></>}
  </>}
+ <button type="button" className="p-secondary p-billing-refresh" disabled={busy||refreshing} aria-busy={refreshing} onClick={refresh}>{refreshing?'Obnovuji stav…':'Obnovit stav přístupu'}</button>
+ {refreshMessage&&<p className="p-small" role="status">{refreshMessage}</p>}
  </section>;
 }

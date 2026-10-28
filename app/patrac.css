@@ -267,3 +267,5 @@ html[data-patrac-home-locked] .p-player-travelling>.p-travel-bottom{touch-action
 @media(max-width:380px){.p-header{padding-inline:14px;gap:8px}.p-header .p-brand>span{font-size:25px}.p-header .p-brand{gap:7px}.p-header .p-brand>svg{width:24px}.p-header .p-icon-button{min-width:36px;width:36px;min-height:40px}.p-header-actions{gap:4px}.p-header .p-brand small{font-size:6px;letter-spacing:1.5px}}
 
 .p-billing{margin:24px 0;padding:20px 0;border-block:1px solid #cbd6ee}.p-billing-plans{display:grid;gap:10px;margin:16px 0}.p-billing-plans button{display:flex;justify-content:space-between;gap:16px;width:100%}.p-billing li{margin:8px 0;font-size:.9rem}
+
+.p-billing .p-billing-refresh{width:100%;min-height:48px;margin-top:14px;justify-content:center;touch-action:manipulation}.p-billing .p-billing-refresh:disabled{opacity:.65;cursor:wait}
