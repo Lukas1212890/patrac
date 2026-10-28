@@ -10,3 +10,19 @@ const fetcher=async(url,options)=>{assert.equal(options.headers.Authorization,'B
 test('secrets and prices are selected per mode without mutating shared bindings',()=>{const live=modeEnv(raw,'live'),sandbox=modeEnv(raw,'test');assert.equal(live.STRIPE_SECRET_KEY,'sk_live_fixture');assert.equal(sandbox.STRIPE_SECRET_KEY,'sk_test_fixture');assert.equal(live.STRIPE_WEBHOOK_SECRET,'whsec_live_fixture');assert.equal(raw.STRIPE_SECRET_KEY,'sk_test_fixture');assert.equal(modeEnv({...raw,STRIPE_LIVE_SECRET_KEY:undefined},'live').STRIPE_SECRET_KEY,'');});
 test('switch verifies Stripe and atomically records one versioned global change',async()=>{const f=fixture();assert.deepEqual(await readRuntimeMode(f.db,'live'),{ready:true,mode:'test',version:0});const input={mode:'live',version:0,confirm:true};await changeRuntimeMode({db:f.db,raw,actor:{id:'admin'},input,fetcher});assert.equal((await readRuntimeMode(f.db)).mode,'live');await changeRuntimeMode({db:f.db,raw,actor:{id:'admin'},input,fetcher});assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_admin_audit').get().n,1);await assert.rejects(changeRuntimeMode({db:f.db,raw,actor:{id:'admin'},input:{mode:'test',version:0,confirm:true},fetcher}),/mezitím/);f.native.close();});
 test('missing live credentials, wrong price or disabled account prevent activation',async()=>{const f=fixture();await assert.rejects(changeRuntimeMode({db:f.db,raw:{...raw,STRIPE_LIVE_SECRET_KEY:''},actor:{id:'admin'},input:{mode:'live',version:0,confirm:true},fetcher}),/Chybí/);assert.equal((await readRuntimeMode(f.db)).mode,'test');const wrong=await verifyMode(raw,'live',async url=>url.endsWith('/account')?Response.json({charges_enabled:true,payouts_enabled:true}):Response.json({active:true,livemode:false}));assert.equal(wrong.verified,false);const disabled=await verifyMode(raw,'live',async()=>Response.json({charges_enabled:false}));assert.equal(disabled.verified,false);f.native.close();});
+
+test('restricted keys verify live configuration and retain strict environment isolation',async()=>{
+ const restricted={...raw,STRIPE_LIVE_SECRET_KEY:'rk_live_fixture'};
+ let calls=0;
+ const result=await verifyMode(restricted,'live',async(url,options)=>{
+  calls++;assert.equal(options.headers.Authorization,'Bearer rk_live_fixture');
+  return fetcher(url,{...options,headers:{...options.headers,Authorization:'Bearer sk_live_fixture'}});
+ });
+ assert.equal(result.verified,true);assert.equal(calls,5);
+ assert.equal(modeEnv({STRIPE_SECRET_KEY:'rk_test_fixture'},'test').STRIPE_SECRET_KEY,'rk_test_fixture');
+ assert.equal(modeEnv({STRIPE_SECRET_KEY:'rk_test_fixture'},'live').STRIPE_SECRET_KEY,'');
+ for(const key of ['rk_test_fixture','pk_live_fixture','rk_live_',null,42]){
+  const result=await verifyMode({...restricted,STRIPE_LIVE_SECRET_KEY:key},'live',()=>{throw Error('Unexpected network request');});
+  assert.equal(result.verified,false);
+ }
+});

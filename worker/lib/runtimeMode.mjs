@@ -1,6 +1,7 @@
+import {stripeKeyMatchesMode} from './stripeKey.mjs';
 import {PLANS} from './billing.mjs';
 export function modeEnv(raw,mode){
- const prefix=mode==='live'?'LIVE':'TEST',legacy=raw.STRIPE_SECRET_KEY?.startsWith('sk_'+mode+'_')||(!raw.STRIPE_SECRET_KEY&&(raw.PATRAC_STRIPE_MODE==='live'?'live':'test')===mode);
+ const prefix=mode==='live'?'LIVE':'TEST',legacy=stripeKeyMatchesMode(raw.STRIPE_SECRET_KEY,mode)||(!raw.STRIPE_SECRET_KEY&&(raw.PATRAC_STRIPE_MODE==='live'?'live':'test')===mode);
  const selected={...raw,PATRAC_STRIPE_MODE:mode,STRIPE_SECRET_KEY:raw['STRIPE_'+prefix+'_SECRET_KEY']||(legacy?raw.STRIPE_SECRET_KEY:''),STRIPE_WEBHOOK_SECRET:raw['STRIPE_'+prefix+'_WEBHOOK_SECRET']||(legacy?raw.STRIPE_WEBHOOK_SECRET:'')};
  for(const p of PLANS)selected['STRIPE_PRICE_'+p.months]=raw['STRIPE_'+prefix+'_PRICE_'+p.months]||(mode==='live'?raw['STRIPE_PRICE_'+p.months]:p.price);
  return selected;
@@ -12,7 +13,7 @@ export async function readRuntimeMode(db,fallback='test'){
 }
 export function modeConfiguration(raw,mode){
  const env=modeEnv(raw,mode),missing=[];
- if(!env.STRIPE_SECRET_KEY?.startsWith('sk_'+mode+'_'))missing.push('STRIPE_'+mode.toUpperCase()+'_SECRET_KEY');
+ if(!stripeKeyMatchesMode(env.STRIPE_SECRET_KEY,mode))missing.push('STRIPE_'+mode.toUpperCase()+'_SECRET_KEY');
  if(!env.STRIPE_WEBHOOK_SECRET?.startsWith('whsec_'))missing.push('STRIPE_'+mode.toUpperCase()+'_WEBHOOK_SECRET');
  for(const p of PLANS)if(!/^price_[A-Za-z0-9]+$/.test(env['STRIPE_PRICE_'+p.months]||''))missing.push('STRIPE_'+mode.toUpperCase()+'_PRICE_'+p.months);
  return{configured:missing.length===0,missing};

@@ -4,10 +4,10 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {createBilling,addMonths,verifyStripeSignature,requirePaidAccess,PLANS} from '../worker/lib/billing.mjs';
 function d1(native){const statement=(sql,values=[])=>({bind:(...v)=>statement(sql,v),async first(){return native.prepare(sql).get(...values)||null;},async all(){return{results:native.prepare(sql).all(...values)};},async run(){return{meta:{changes:Number(native.prepare(sql).run(...values).changes)}};}});return{prepare:sql=>statement(sql),async batch(statements){native.exec('BEGIN');try{const out=[];for(const s of statements)out.push(await s.run());native.exec('COMMIT');return out;}catch(e){native.exec('ROLLBACK');throw e;}}};}
-function fixture(){
+function fixture(overrides={}){
  const native=new DatabaseSync(':memory:');native.exec(readFileSync(new URL('../drizzle/0002_creator_auth.sql',import.meta.url),'utf8'));native.exec(readFileSync(new URL('../drizzle/0004_billing.sql',import.meta.url),'utf8'));
  native.exec("INSERT INTO patrac_auth_user VALUES('user','Tester','user@example.com',1,NULL,1,1)");
- const db=d1(native),env={DB:db,PATRAC_BILLING_ENABLED:'true',PATRAC_STRIPE_MODE:'test',STRIPE_SECRET_KEY:'sk_test_local_fixture',STRIPE_WEBHOOK_SECRET:'whsec_local_fixture'},calls=[],sessions=new Map();
+ const db=d1(native),env={DB:db,PATRAC_BILLING_ENABLED:'true',PATRAC_STRIPE_MODE:'test',STRIPE_SECRET_KEY:'sk_test_local_fixture',STRIPE_WEBHOOK_SECRET:'whsec_local_fixture',...overrides},calls=[],sessions=new Map();
  let stamp=Date.UTC(2026,0,31,12,15),next=0;
  const fetcher=async(url,options)=>{calls.push({url,options});if(options.method==='POST'){
   const body=new URLSearchParams(options.body),id='cs_test_fixture'+(++next),price=body.get('line_items[0][price]');
@@ -60,4 +60,27 @@ test('signature verifies exact payload, rejects tampering, stale timestamps and 
 test('disabled billing needs no migration and checkout cannot run; checkout rate limits reserve in SQL',async()=>{
  const off=createBilling({db:{},env:{PATRAC_BILLING_ENABLED:'false'}});assert.equal((await off.state('any')).enabled,false);await assert.rejects(()=>off.checkout({},{}),e=>e.status===503);
  const f=fixture();for(let i=0;i<10;i++)await f.api.checkout(f.user,{months:3,requestKey:crypto.randomUUID()});await assert.rejects(()=>f.api.checkout(f.user,{months:3,requestKey:crypto.randomUUID()}),e=>e.status===429);f.native.close();
+});
+
+test('restricted test key supports checkout and idempotent access grants',async()=>{
+ const f=fixture({STRIPE_SECRET_KEY:'rk_test_fixture'});
+ const session=await purchase(f);await f.api.fulfill(session.id);await f.api.fulfill(session.id);
+ assert.equal((await f.api.state('user')).active,true);
+ assert.ok(f.calls.every(c=>c.options.headers.Authorization==='Bearer rk_test_fixture'));
+ assert.equal(f.native.prepare('SELECT version FROM patrac_access').get().version,1);f.native.close();
+});
+test('restricted live key reaches checkout; wrong-mode and public keys never reach Stripe',async()=>{
+ const f=fixture();
+ for(const key of ['rk_live_fixture','rk_test_fixture','pk_live_fixture']){
+  let calls=0;
+  const api=createBilling({db:f.db,env:{...f.env,PATRAC_STRIPE_MODE:'live',STRIPE_SECRET_KEY:key,STRIPE_PRICE_3:'price_live3'},fetcher:async(url,options)=>{
+   calls++;assert.equal(options.headers.Authorization,'Bearer rk_live_fixture');
+   assert.equal(new URLSearchParams(options.body).get('line_items[0][price]'),'price_live3');
+   return Response.json({id:'cs_livefixture',url:'https://checkout.stripe.com/c/pay/cs_livefixture'});
+  }});
+  const attempt=()=>api.checkout(f.user,{months:3,environment:'live',requestKey:crypto.randomUUID()});
+  if(key==='rk_live_fixture'){await attempt();assert.equal(calls,1);}
+  else{await assert.rejects(attempt,e=>e.status===503);assert.equal(calls,0);}
+ }
+ f.native.close();
 });

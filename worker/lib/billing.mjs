@@ -1,3 +1,4 @@
+import {stripeKeyMatchesMode} from './stripeKey.mjs';
 import {carryAdminAccess} from './adminAccessCarryover.mjs';
 import { GameError } from './patrac-engine.mjs';
 export const PLANS = Object.freeze([
@@ -28,7 +29,7 @@ export function createBilling({db,env,fetcher=fetch,now=Date.now}) {
  const available=()=>env.PATRAC_BILLING_ENABLED==='true'&&!!env.STRIPE_SECRET_KEY&&!!env.STRIPE_WEBHOOK_SECRET;
  async function stripe(path,params,idempotencyKey) {
   const key=env.STRIPE_SECRET_KEY;
-  if(!key||!key.startsWith(environment==='test'?'sk_test_':'sk_live_'))throw new GameError('Platební brána není nakonfigurovaná.',503);
+  if(!stripeKeyMatchesMode(key,environment))throw new GameError('Platební brána není nakonfigurovaná.',503);
   const response=await fetcher('https://api.stripe.com/v1/'+path,{
    method:params?'POST':'GET',redirect:'manual',signal:AbortSignal.timeout(15000),
    headers:{Authorization:'Bearer '+key,'Stripe-Version':'2025-06-30.basil',...(params?{'Content-Type':'application/x-www-form-urlencoded'}:{}),...(idempotencyKey?{'Idempotency-Key':idempotencyKey}:{})},
