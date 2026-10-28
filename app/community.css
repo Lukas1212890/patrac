@@ -98,3 +98,11 @@ html,body{background-color:#eaf2ff}
 }
 html[data-patrac-home-locked] .p-app.p-view-home{position:fixed;inset:0 0 auto;height:100lvh;max-height:100lvh;min-height:0}
 html[data-patrac-home-locked] .p-app.p-view-home>.p-bottom-nav{position:absolute;bottom:0}
+/* The fixed body must use the same viewport as its installed map shell;
+   a percentage height otherwise clips the footer at the old small viewport. */
+@media(display-mode:standalone),(display-mode:fullscreen){
+ html:has(.p-view-home),body:has(.p-view-home){height:100lvh;max-height:100lvh}
+ body:has(.p-view-home){bottom:auto}
+}
+html[data-patrac-home-locked]:has(.p-view-home),html[data-patrac-home-locked] body:has(.p-view-home){height:100lvh;max-height:100lvh}
+html[data-patrac-home-locked] body:has(.p-view-home){bottom:auto}
