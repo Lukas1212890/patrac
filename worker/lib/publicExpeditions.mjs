@@ -26,7 +26,7 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
  async function ready(){if(!await communityReady(db))throw new GameError('Veřejné výpravy se právě připravují.',503);}
  async function paid(user){if(!user)throw new GameError('Pro veřejnou výpravu se přihlaste.',401);return requirePublicAccess(db,env,user.id,now());}
  async function ownAttempt(code,userId){return db.prepare('SELECT a.id AS attempt_id,a.created_at,t.*,e.payload AS game_payload FROM patrac_public_attempts a JOIN patrac_teams t ON t.id=a.team_id JOIN patrac_expeditions e ON e.code=a.code WHERE a.code=? AND a.user_id=? AND a.environment=?').bind(code,userId,environment).first();}
- function attemptSummary(row){if(!row)return null;const team=JSON.parse(row.payload),game=JSON.parse(row.game_payload);return{id:row.attempt_id,code:row.code,name:game.name,startedAt:team.startedAt,finishedAt:team.finishedAt,index:team.index,totalStations:game.stations.length,totalMs:score(game,team,now()).totalMs,hidden:!game.published,deleted:game.status==='deleting'};}
+ function attemptSummary(row){if(!row)return null;const team=JSON.parse(row.payload),game=JSON.parse(row.game_payload);return{id:row.attempt_id,code:row.code,name:game.name,startedAt:team.startedAt,finishedAt:team.finishedAt,abandonedAt:team.abandonedAt??null,index:team.index,totalStations:game.stations.length,totalMs:score(game,team,now()).totalMs,hidden:!game.published,deleted:game.status==='deleting'};}
  async function leaderboard(code){const rows=await db.prepare(`SELECT substr(u.name,1,60) AS nickname,
   CAST(json_extract(t.payload,'$.finishedAt') AS INTEGER)-CAST(json_extract(t.payload,'$.startedAt') AS INTEGER)+COALESCE(CAST(json_extract(t.payload,'$.penaltyMs') AS INTEGER),0) AS totalMs,
   json_extract(t.payload,'$.finishedAt') AS finishedAt
@@ -66,7 +66,7 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
  async function play(code,user,input){await ready();await paid(user);const row=await ownAttempt(code,user.id);if(!row)throw new GameError('Tuto výpravu nejprve zahajte z mapy.',404);
   const game=JSON.parse(row.game_payload);if(game.visibility!=='public'||game.status!=='running')throw new GameError('Výprava už není dostupná.',410);
   if(input){
-   if(!['arrive','answer','hint','solution'].includes(input.action))throw new GameError('Neplatná herní akce.');
+   if(!['arrive','answer','hint','solution','abandon'].includes(input.action))throw new GameError('Neplatná herní akce.');
    for(let i=0;i<5;i++){
     const current=i===0?row:await db.prepare('SELECT * FROM patrac_teams WHERE id=?').bind(row.id).first();if(!current)throw new GameError('Výprava byla odstraněna.',410);
     const next=applyAction(game,JSON.parse(current.payload),input,now()),wrong=next.wrongAnswer;delete next.wrongAnswer;

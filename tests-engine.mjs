@@ -52,3 +52,16 @@ test('solution penalty accepts all six choices and defaults old stations to thir
  const t=applyAction(g,newTeam('a','Hráč',at),{action:'arrive',index:0,position:position(at+1000)},at+1000);
  assert.equal(applyAction(g,t,{action:'solution',index:0},at+2000).penaltyMs,30*60000);
 });
+
+test('abandonment requires confirmation, freezes time and permanently blocks play without recording a finish',()=>{
+ const g=game(),t=newTeam('a','Hráč',at);
+ assert.throws(()=>applyAction(g,t,{action:'abandon'},at+1000));
+ const ended=applyAction(g,t,{action:'abandon',confirm:true},at+5000);
+ assert.equal(ended.abandonedAt,at+5000);assert.equal(ended.finishedAt,null);
+ assert.equal(score(g,ended,at+500000).elapsedMs,5000);
+ assert.equal(teamProjection(g,ended,at+500000).station,null);
+ assert.deepEqual(applyAction(g,ended,{action:'abandon',confirm:true},at+6000),ended);
+ for(const action of ['arrive','answer','hint','solution'])assert.throws(()=>applyAction(g,ended,{action,index:0,answer:'stín'},at+7000));
+ assert.equal(ended.events.filter(e=>e.type==='abandon').length,1);
+ const finished={...t,finishedAt:at+4000};assert.deepEqual(applyAction(g,finished,{action:'abandon',confirm:true},at+5000),finished);
+});

@@ -44,6 +44,11 @@ export function newTeam(id, name, now) { return { id, name, joinedAt: now, index
 export function applyAction(game, team, action, now) {
   if (game.status !== 'running') throw new GameError('Výprava ještě neběží.', 409);
   if (team.finishedAt) return team;
+  if (team.abandonedAt) { if (action.action === 'abandon' && action.confirm === true) return team; throw new GameError('Tento pokus byl ukončený a nelze v něm pokračovat.', 409); }
+  if (action.action === 'abandon') {
+    if (action.confirm !== true) throw new GameError('Potvrďte trvalé ukončení svého pokusu.');
+    return { ...structuredClone(team), abandonedAt: now, events: [...team.events, { type: 'abandon', index: team.index, at: now }] };
+  }
   if (action.index !== team.index) throw new GameError('Stanoviště se změnilo. Obnovte průběh.', 409);
   const next = structuredClone(team), station = game.stations[team.index];
   if (action.action === 'arrive') {
@@ -78,11 +83,11 @@ export function applyAction(game, team, action, now) {
 }
 export function score(game, team, now) {
   const startedAt = team.startedAt ?? game.startedAt;
-  const elapsed = startedAt ? Math.max(0, (team.finishedAt || now) - startedAt) : 0;
+  const elapsed = startedAt ? Math.max(0, (team.finishedAt || team.abandonedAt || now) - startedAt) : 0;
   return { elapsedMs: elapsed, totalMs: elapsed + (game.mode === 'race' ? team.penaltyMs : 0) };
 }
 export function teamProjection(game, team, now) {
-  const station = game.status === 'running' && !team.finishedAt ? game.stations[team.index] : null;
+  const station = game.status === 'running' && !team.finishedAt && !team.abandonedAt ? game.stations[team.index] : null;
   return { ...team, ...score(game, team, now), station: station ? {
     id: station.id, name: station.name, lat: station.lat, lng: station.lng, radius: station.radius,
     ...(team.arrivedAt ? { question: station.question, ...(game.mode === 'race' ? { solutionMinutes: station.solutionMinutes ?? 30, ...(team.events.some(e => e.type === 'solution' && e.index === team.index) ? { solution: station.answer.split('\n').find(v => v.trim()).trim() } : {}) } : {}), hints: game.mode === 'race' ? station.hints.map(h => ({

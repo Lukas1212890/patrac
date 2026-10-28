@@ -177,3 +177,21 @@ test('navigation to the public start consumes no attempt or time; explicit start
  assert.equal((await f.api.start('ABCDEFG',f.users.alice,true)).attempt.startedAt,start.attempt.startedAt);
  }finally{f.native.close();}
 });
+
+test('abandoned public attempt stays consumed across service instances and is excluded from rankings and reviews',async()=>{
+ const f=fixture();try{
+ await f.add('ABCDEFG');const first=await f.api.start('ABCDEFG',f.users.alice,true);await f.api.start('ABCDEFG',f.users.bob,true);
+ await assert.rejects(()=>f.api.play('ABCDEFG',f.users.alice,{action:'abandon'}));
+ f.tick(20000);await f.api.play('ABCDEFG',f.users.alice,{action:'abandon',confirm:true});
+ f.tick(60000);await f.api.play('ABCDEFG',f.users.alice,{action:'abandon',confirm:true});
+ const fresh=createPublicService({db:f.db,env:f.env,revealPhoto:async h=>h,now:f.now});
+ const resumed=await fresh.start('ABCDEFG',f.users.alice,true);assert.equal(resumed.attempt.id,first.attempt.id);assert.ok(resumed.attempt.abandonedAt);assert.equal(resumed.attempt.finishedAt,null);assert.equal(resumed.attempt.totalMs,20000);
+ assert.equal((await fresh.play('ABCDEFG',f.users.alice)).team.station,null);
+ await assert.rejects(()=>fresh.play('ABCDEFG',f.users.alice,{action:'answer',index:0,answer:'secret answer'}),e=>e.status===409);
+ assert.equal((await fresh.play('ABCDEFG',f.users.bob)).team.abandonedAt,undefined);
+ assert.equal((await fresh.detail('ABCDEFG',f.users.alice)).leaderboard.length,0);
+ const rankings=await createRankingService({db:f.db,env:f.env}).overview(f.users.alice);assert.equal(rankings.myResults.stats.completed,0);
+ await assert.rejects(()=>createReviewService({db:f.db,env:f.env,now:f.now}).save('ABCDEFG',f.users.alice,{action:'save',stars:5,comment:''}),e=>e.status===403);
+ assert.ok((await fresh.history(f.users.alice)).attempts[0].abandonedAt);
+ }finally{f.native.close();}
+});

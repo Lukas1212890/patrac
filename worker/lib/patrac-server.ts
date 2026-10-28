@@ -103,7 +103,7 @@ export async function viewExpedition(request: Request, code: string) {
   }
   if (game.visibility==='public') return json({role:'guest',game:meta,now});
   if (who.role === 'team') {
-    if(new URL(request.url).searchParams.get('summary')==='1')return json({role:'team',game:meta,team:{name:who.team.name,index:who.team.index,finishedAt:who.team.finishedAt},now});
+    if(new URL(request.url).searchParams.get('summary')==='1')return json({role:'team',game:meta,team:{name:who.team.name,index:who.team.index,finishedAt:who.team.finishedAt,abandonedAt:who.team.abandonedAt},now});
     const counts = await db().prepare("SELECT COUNT(*) as total, SUM(CASE WHEN json_extract(payload, '$.finishedAt') IS NOT NULL THEN 1 ELSE 0 END) as finished FROM patrac_teams WHERE code = ?").bind(code).first();
     const projection = teamProjection(game, who.team, now);
     if (projection.station?.hints) projection.station.hints = await Promise.all(projection.station.hints.map(async (hint: any) => {
@@ -123,7 +123,7 @@ export async function changeExpedition(request: Request, code: string) {
     return json(await removeExpedition(db(),env.BUCKET,{code,userId:account!.id,version:input.version,confirmation:input.confirmation}));
   }
   if (game.status === 'deleting') throw new GameError('Výprava se právě maže.',410);
-  if (game.visibility==='public'&&['join','arrive','hint','answer','solution'].includes(input.action))throw new GameError('Veřejnou výpravu zahajte přihlášeným účtem z mapy.',403);
+  if (game.visibility==='public'&&['join','arrive','hint','answer','solution','abandon'].includes(input.action))throw new GameError('Veřejnou výpravu zahajte přihlášeným účtem z mapy.',403);
   if (input.action === 'join') {
     const account=await creatorIdentity(request,true);
     if(await db().prepare('SELECT code FROM patrac_creator_games WHERE code=? AND creator_id=?').bind(code,account!.id).first())return json({ok:true,role:'owner'});
@@ -136,7 +136,7 @@ export async function changeExpedition(request: Request, code: string) {
     }
     if (!['waiting','running'].includes(game.status)) throw new GameError('Výprava není dostupná pro nové hráče.',409);
     const team={...newTeam(crypto.randomUUID(),account!.nickname,Date.now()),...(game.status==='running'?{startedAt:Date.now()}:{})};
-    const result=await db().prepare("INSERT OR IGNORE INTO patrac_teams(id,code,token_hash,name_key,payload,version,user_id) SELECT ?,?,?,?,?,0,? WHERE (SELECT json_extract(payload,'$.status') FROM patrac_expeditions WHERE code=?) IN ('waiting','running') AND (SELECT COUNT(*) FROM patrac_teams WHERE code=? AND json_extract(payload,'$.finishedAt') IS NULL)<30")
+    const result=await db().prepare("INSERT OR IGNORE INTO patrac_teams(id,code,token_hash,name_key,payload,version,user_id) SELECT ?,?,?,?,?,0,? WHERE (SELECT json_extract(payload,'$.status') FROM patrac_expeditions WHERE code=?) IN ('waiting','running') AND (SELECT COUNT(*) FROM patrac_teams WHERE code=? AND json_extract(payload,'$.finishedAt') IS NULL AND json_extract(payload,'$.abandonedAt') IS NULL)<30")
       .bind(team.id,code,await hash(token()),'account:'+account!.id,JSON.stringify(team),account!.id,code,code).run();
     if(!result.meta.changes&&!await db().prepare('SELECT id FROM patrac_teams WHERE code=? AND user_id=?').bind(code,account!.id).first())throw new GameError('Výprava je plná (30 aktivních hráčů).',409);
     return json({ok:true},201);
