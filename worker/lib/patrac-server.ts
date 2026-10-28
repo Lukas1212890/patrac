@@ -99,6 +99,7 @@ export async function viewExpedition(request: Request, code: string) {
   }
   if (game.visibility==='public') return json({role:'guest',game:meta,now});
   if (who.role === 'team') {
+    if(new URL(request.url).searchParams.get('summary')==='1')return json({role:'team',game:meta,team:{name:who.team.name,index:who.team.index,finishedAt:who.team.finishedAt},now});
     const counts = await db().prepare("SELECT COUNT(*) as total, SUM(CASE WHEN json_extract(payload, '$.finishedAt') IS NOT NULL THEN 1 ELSE 0 END) as finished FROM patrac_teams WHERE code = ?").bind(code).first();
     const projection = teamProjection(game, who.team, now);
     if (projection.station?.hints) projection.station.hints = await Promise.all(projection.station.hints.map(async (hint: any) => {

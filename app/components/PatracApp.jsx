@@ -8,6 +8,7 @@ import PublicExpeditionDetail from './PublicExpeditionDetail';
 import CreatorHub from './CreatorHub';
 import PlayLibrary from './PlayLibrary';
 import {publicRequest} from '../lib/public-client';
+import {checkPrivateHistory,mergePrivateHistory} from '../lib/privateHistory.mjs';
 import PatracEditor from './PatracEditor';
 import DeleteExpeditionDialog from './DeleteExpeditionDialog';
 import CreatorAccount from './CreatorAccount';
@@ -27,9 +28,9 @@ export const time = ms => { const sec = Math.floor(Math.max(0, ms || 0) / 1000);
 function remembered() { try { const entries = JSON.parse(localStorage.getItem(SESSIONS)); return Array.isArray(entries) ? entries : []; } catch { return []; } }
 function remember(session) { const entries = remembered().filter(s => !(s.code === session.code && s.role === session.role)); localStorage.setItem(SESSIONS, JSON.stringify([session, ...entries].slice(0, 40))); }
 function download(value, name) { const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
-async function request(path, token, data) {
+async function request(path, token, data, signal) {
   const account = await creatorAccessToken();
-  const response = await fetch(apiUrl('/api/expeditions' + path), { method: data ? 'POST' : 'GET', cache: 'no-store', headers: { ...(account ? { 'X-Patrac-Account': account } : {}), ...(data ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) }, ...(data ? { body: JSON.stringify(data) } : {}), signal: AbortSignal.timeout(20000) });
+  const response = await fetch(apiUrl('/api/expeditions' + path), { method: data ? 'POST' : 'GET', cache: 'no-store', headers: { ...(account ? { 'X-Patrac-Account': account } : {}), ...(data ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) }, ...(data ? { body: JSON.stringify(data) } : {}), signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000) });
   let value; try { value = await response.json(); } catch { throw Error('Server nevrátil platnou odpověď. Zkuste to znovu.'); }
   if (!response.ok) throw Object.assign(Error(value.error || 'Požadavek se nepodařilo dokončit.'), {status:response.status}); return value;
 }
@@ -47,6 +48,22 @@ export default function PatracApp() {
   useEffect(() => { if (account.recovery) setView('account'); }, [account.recovery]);
   const [view, setView] = useState('home'), [publicCode,setPublicCode]=useState(null), [creationVisibility,setCreationVisibility]=useState('private'), [session, setSession] = useState(null), [data, setData] = useState(null), [saved, setSaved] = useState([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [online, setOnline] = useState(true), [clock, setClock] = useState(Date.now()), [editInitial, setEditInitial] = useState(null), [editVersion, setEditVersion] = useState(null), [code, setCode] = useState(''), [teamName, setTeamName] = useState(''), [joiningToken, setJoiningToken] = useState(null), [help, setHelp] = useState(false), [resumeOpen, setResumeOpen] = useState(false);
   const currentSession = useRef(null), offset = useRef(0), inFlight = useRef(false);
+  const validatePrivateHistory=useCallback(async signal=>{
+    const entries=remembered();
+    if(!navigator.onLine)return{unverified:entries.some(s=>s.role==='team'&&!s.pending)};
+    const result=await checkPrivateHistory(entries,(s,abort)=>request('/'+s.code+'?summary=1',s.token,undefined,abort),signal);
+    if(signal?.aborted)return result;
+    const remaining=mergePrivateHistory(remembered(),result.checked);
+    try{localStorage.setItem(SESSIONS,JSON.stringify(remaining));}catch{}
+    setSaved(remaining.filter(s=>!s.pending));return result;
+  },[]);
+  function forgetUnavailable(s){
+    if(s.role==='public')return;
+    const remaining=mergePrivateHistory(remembered(),[{session:s,removed:true}]);
+    try{localStorage.setItem(SESSIONS,JSON.stringify(remaining));}catch{}
+    setSaved(remaining.filter(s=>!s.pending));
+  }
+
   useEffect(() => { if (view === 'home') return installHomeGestureLock(window); }, [view]);
   useEffect(() => { setSaved(remembered().filter(s => !s.pending)); const params = new URL(location.href).searchParams; if (params.get('public')&&/^[A-Z2-9]{7}$/.test(params.get('public').toUpperCase())) { setPublicCode(params.get('public').toUpperCase());setView('public-detail'); } if (params.get('billing')) setView('account'); if (params.get('code')) { setCode(params.get('code').toUpperCase()); setView('join'); } setOnline(navigator.onLine); const update = () => setOnline(navigator.onLine); window.addEventListener('online', update); window.addEventListener('offline', update); if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {}); return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); }; }, []);
   useEffect(() => { const t = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(t); }, []);
@@ -60,7 +77,7 @@ export default function PatracApp() {
   useEffect(() => { if (!account.loading && !account.user && ['owner','public'].includes(session?.role)) home(); }, [account.user?.id, account.loading, session?.role]);
   const refresh = useCallback(async () => {
     const s = currentSession.current; if (!s || !navigator.onLine) return;
-    try { const value = s.role==='public'?await publicRequest('/expeditions/'+s.code+'/play'):await request('/' + s.code, s.token); if (currentSession.current !== s) return; if (value.role !== (s.role==='public'?'team':s.role)) throw Error('Přístupový klíč není platný. Obnovte přístup ze zálohy.'); offset.current = value.now - Date.now(); setData(old => !old || value.now >= old.now ? value : old); setError(''); } catch (e) { if(s.role==='public'&&[401,402].includes(e.status)){currentSession.current=null;setSession(null);setData(null);setView('account');} if ([404,410].includes(e.status)) { currentSession.current=null;setSession(null);setData(null);setView('removed'); } setError(e.name === 'TimeoutError' ? 'Server neodpovídá. Průběh zůstává uložený; zkuste obnovit spojení.' : e.message); }
+    try { const value = s.role==='public'?await publicRequest('/expeditions/'+s.code+'/play'):await request('/' + s.code, s.token); if (currentSession.current !== s) return; if (value.role !== (s.role==='public'?'team':s.role)) throw Error('Přístupový klíč není platný. Obnovte přístup ze zálohy.'); offset.current = value.now - Date.now(); setData(old => !old || value.now >= old.now ? value : old); setError(''); } catch (e) { if(currentSession.current!==s)return; if(s.role==='public'&&[401,402].includes(e.status)){currentSession.current=null;setSession(null);setData(null);setView('account');} if ([404,410].includes(e.status)) { forgetUnavailable(s); currentSession.current=null;setSession(null);setData(null);setView('removed'); } setError(e.name === 'TimeoutError' ? 'Server neodpovídá. Průběh zůstává uložený; zkuste obnovit spojení.' : e.message); }
   }, []);
   useEffect(() => { if (!session) return; refresh(); const interval = setInterval(() => { if (!document.hidden) refresh(); }, 5000); const resume = () => { if (!document.hidden) refresh(); }; window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume); window.addEventListener('pageshow', resume); return () => { clearInterval(interval); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); window.removeEventListener('pageshow', resume); }; }, [session?.code, session?.token, refresh]);
   function home() { currentSession.current = null; setSession(null); setData(null); setError(''); setView('home'); setResumeOpen(false); history.replaceState(null, '', '/'); }
@@ -126,7 +143,7 @@ export default function PatracApp() {
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
     {view === 'home' && <CommunityMap onSelect={showPublic} onJoin={()=>navigate('join')}/>}
     {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={home} onAccount={()=>navigate('account')} onStarted={enter}/>}
-    {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team')} onEnter={enter} onAccount={()=>navigate('account')} onJoin={()=>navigate('join')} onRestore={restore}/>}
+    {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team')} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onJoin={()=>navigate('join')} onRestore={restore}/>}
     {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={openEditor} onEnter={enter}/>}
 
     {resumeOpen && <SavedGames sessions={availableGames} onEnter={enter} onRestore={restore} onClose={() => setResumeOpen(false)}/>}

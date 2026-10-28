@@ -30,6 +30,8 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   const teamToken='a'.repeat(64);assert.equal((await request('/api/expeditions/ABCDEFG',{action:'join',name:'Anonymous team',teamToken})).status,201);
   game.status='running';game.startedAt=Date.now();await db.prepare('UPDATE patrac_expeditions SET payload=? WHERE code=?').bind(JSON.stringify(game),'ABCDEFG').run();
   const arrive=await mf.dispatchFetch('http://localhost:8790/api/expeditions/ABCDEFG',{method:'POST',headers:{Origin:'http://localhost:3000','Content-Type':'application/json',Authorization:'Bearer '+teamToken},body:JSON.stringify({action:'arrive',index:0,position:{lat:49.3,lng:17.39,acc:5,timestamp:Date.now()}})});assert.equal(arrive.status,200,await arrive.clone().text());
+  const summary=await mf.dispatchFetch('http://localhost:8790/api/expeditions/ABCDEFG?summary=1',{headers:{Origin:'http://localhost:3000',Authorization:'Bearer '+teamToken}});
+  assert.equal(summary.status,200);const compact=await summary.json();assert.equal(compact.role,'team');assert.equal(compact.game.name,'Saved game');assert.equal(compact.team.name,'Anonymous team');assert.deepEqual(Object.keys(compact.team).sort(),['finishedAt','index','name']);assert.equal(JSON.stringify(compact).includes('Otázka'),false);
   assert.equal((await request('/api/billing/webhook',{type:'checkout.session.completed'},null,'')).status,400);
   const raw=JSON.stringify({type:'unrelated.event',livemode:false}),time=Math.floor(Date.now()/1000);
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);

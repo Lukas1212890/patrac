@@ -106,3 +106,8 @@ Po migraci `drizzle/0006_public_reviews.sql` detail veřejné výpravy nabízí 
 ### Mapový podklad
 
 Základní mapa Pátrače používá OpenStreetMap Standard (`https://tile.openstreetmap.org/{z}/{x}/{y}.png`), stejně jako Stopař. Je to veřejná služba bez garance dostupnosti, nikoli smluvně zajištěný komerční hosting. Dodržovat https://operations.osmfoundation.org/policies/tiles/: viditelná proklikávací atribuce, Referer z prohlížeče a běžná HTTP cache. Referrer-Policy posílá mezi doménami jen origin; neodesílá cestu ani parametry hry. Není přidaný proxy, offline stahování oblastí ani nové cachování externích map v service workeru. Letecký podklad zůstává Esri. Všechny úpravy jsou jen v repozitáři Pátrače.
+
+
+### Uložené soukromé výpravy
+
+Moje hraní ověřuje lokálně uložené týmové přístupy lehkým autentizovaným `GET /api/expeditions/:code?summary=1`, který nevrací hádanky, fotografie ani události. Při potvrzeném HTTP 404/410 odstraní jen odpovídající uložený přístup, včetně klíče, a zachová novější či jiné relace. Timeouty, offline stav, HTTP 401/403/5xx a neověřená role přístupy nemažou. Kontrola běží při otevření přehledu, ručním obnovení a návratu internetu; nejvýše tři požadavky současně. Smazání z lokální historie není smazání existující výpravy ani týmu na serveru.
