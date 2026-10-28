@@ -1,6 +1,6 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {Compass,LocateFixed,MapPin,Clock3,List,RefreshCw,ChevronRight,Star} from 'lucide-react';
+import {Compass,LocateFixed,MapPin,List,RefreshCw,ChevronRight,Star} from 'lucide-react';
 import {loadMap,RasterMap} from './PatracMap';
 import {getBaseMapConfig} from '../lib/mapConfig';
 import {publicRequest,difficulties} from '../lib/public-client';
@@ -25,13 +25,15 @@ export default function CommunityMap({onSelect,onJoin}){
  }
  return <main className="p-community-home"><div className="p-community-map" data-patrac-pan="true">{fallback?<RasterMap overview target={center} points={result?.expeditions||[]} onPointSelect={onSelect} onBounds={bounds} baseMap="map"/>:<div ref={node} className="p-community-map-canvas" aria-label="Mapa veřejných výprav"/>}</div>
  <div className="p-map-heading"><span className="p-kicker">VENKU ČEKÁ DOBRODRUŽSTVÍ</span><h1>Kam vyrazíš dnes?</h1><p>Veřejné výpravy pro předplatitele.</p></div>
- <div className="p-map-tools"><button aria-label="Výpravy v mém okolí" disabled={locating} onClick={locate}><LocateFixed size={20}/>{locating?'Hledám…':'Moje okolí'}</button><button onClick={()=>setList(v=>!v)} aria-expanded={list}><List size={20}/>{list?'Skrýt seznam':'Seznam výprav'}</button></div>
- <section className={'p-map-discovery'+(list?' expanded':'')}><div className="p-row p-between"><strong><Compass size={19}/> {result?.expeditions?.length||0} výprav v mapě</strong><button type="button" aria-label="Obnovit mapu výprav" onClick={()=>setReload(v=>v+1)}><RefreshCw size={18}/></button></div>
- {(error||mapError)&&<p role="status" className="p-small">{error||mapError}</p>}
+ <div className="p-map-tools"><button aria-label="Výpravy v mém okolí" disabled={locating} onClick={locate}><LocateFixed size={20}/>{locating?'Hledám…':'Moje okolí'}</button><button onClick={()=>setList(v=>!v)} aria-expanded={list} aria-controls="community-discovery"><List size={20}/><span className="p-map-list-desktop">{list?'Skrýt seznam':'Seznam výprav'}</span><span className="p-map-list-mobile">{list?'Zavřít seznam':'Výpravy'}{!list&&' ('+(result?.expeditions?.length??'…')+')'}</span></button></div>
+ <section id="community-discovery" aria-label="Výpravy a soukromá hra" className={'p-map-discovery'+(list?' expanded':'')}><div className="p-row p-between"><strong><Compass size={19}/> {result?.expeditions?.length||0} výprav v mapě</strong><button type="button" aria-label="Obnovit mapu výprav" onClick={()=>setReload(v=>v+1)}><RefreshCw size={18}/></button></div>
+ {(error||mapError)&&<p role="status" className="p-small p-map-notice">{error||mapError}</p>}
+ <div className="p-discovery-info">
  {!result&&!error&&<p className="p-small" role="status">Načítám veřejné výpravy…</p>}
  {result&&!result.ready&&<p className="p-small">Veřejné výpravy právě připravujeme. Soukromou hru můžete otevřít kódem.</p>}
  {result?.ready&&!result.expeditions.length&&<p className="p-small">V této oblasti zatím žádná výprava není. Posuňte mapu nebo zveřejněte vlastní v záložce Tvořit.</p>}
  {result?.hasMore&&<p className="p-small">Je tu více výprav. Přibližte mapu pro přesnější výběr.</p>}
+ </div>
  {list&&<div className="p-community-list" data-patrac-pan="true">{result?.expeditions.map(item=><button key={item.code} onClick={()=>onSelect(item.code)}><span className="p-discovery-icon"><MapPin size={20}/></span><span><strong>{item.name}</strong><small>{difficulties[item.difficulty]} · {item.distanceKm} km · {item.estimatedMinutes} min</small>{item.rating?.count>0&&<small className="p-map-rating"><Star size={13} fill="currentColor"/> {Number(item.rating.average).toLocaleString('cs-CZ')} / 5 · {item.rating.count} hodnocení</small>}</span><ChevronRight size={18}/></button>)}</div>}
  <button type="button" className="p-primary p-code-entry" onClick={onJoin}>Zahájit soukromou výpravu <ChevronRight size={16}/></button>
  </section></main>;
