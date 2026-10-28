@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { allowedOrigin } from './origin.mjs';
 import { createExpedition, viewExpedition, changeExpedition, errorResponse } from './lib/patrac-server';
 import { adminRequest } from './admin';
+import { billingRequest } from './billing';
 import { accountAuth } from './auth';
 import * as account from './account';
 import * as config from './config';
@@ -18,7 +19,8 @@ export default {
     const path = new URL(request.url).pathname;
     let response: Response;
     try {
-      if (path.startsWith('/api/admin/')) {
+      if (path === '/api/billing' || path.startsWith('/api/billing/')) response = await billingRequest(request);
+      else if (path.startsWith('/api/admin/')) {
         if (request.method === 'POST' && !origin) return Response.json({error:'Chybí původ požadavku.'},{status:403,headers});
         response = await adminRequest(request);
       }

@@ -46,3 +46,19 @@ Před prvním použitím spustit `drizzle/0003_account_admin.sql` v samostatné 
 Správa obsahuje vyhledávání a stránkování všech účtů, změnu přezdívky/e-mailu, zaslání obnovy hesla a ověření, ukončení relací a historii správcovských zásahů. Hesla, hashe hesel ani session tokeny se nevracejí. Zápisy vyžadují přihlášení vytvořené nejvýše před 15 minutami; jinak UI vyžádá znovu heslo. Změna e-mailu zneplatní ověření a ukončí relace; adresát se načítá z databáze, nikoli z požadavku na reset. Chyba doručení při úpravě e-mailu je označená jako částečně dokončená operace, ne jako zrušená změna. E-mailové akce mají limity a audit je chráněn stejně jako účty. Oprávnění správce se přesunem adresy na jiného uživatele nepřenese.
 
 Ověřeno integračními testy nad skutečnými podepsanými Better Auth relacemi a dočasnou SQLite databází: anonymní/nesprávcovské/podvržené přístupy, zastaralé změny, kolize e-mailu, odvolání relací, nutnost nového přihlášení, limity zpráv, částečné selhání e-mailu a okamžité odebrání role. První produkční správce musí být po nasazení potvrzen vlastníkem v D1; žádné hromadné e-maily se při nasazení neposílají.
+
+## Platby a časově omezený přístup
+
+Integrace Stripe Checkout používá jednorázové ceny 199/349/599 Kč na 3/6/12 kalendářních měsíců. Ceny v `worker/lib/billing.mjs` jsou výhradně ze sandboxu Pátrače. Délka se přičítá v UTC od pozdějšího z okamžiků potvrzení platby a dosavadního konce přístupu; neexistující den na konci měsíce se zkrátí na poslední den cílového měsíce. Testovací a ostré přístupy jsou v databázi oddělené.
+
+Před zapnutím:
+
+1. V D1 `patra` provést idempotentní `drizzle/0004_billing.sql` (nic nemaže).
+2. Ve Worker Secrets uložit `STRIPE_SECRET_KEY` ze správného sandboxu, nikoli z Buy Me a Coffee. Do repozitáře ani do chatu ho nevkládat.
+3. Ve stejném Stripe sandboxu přidat webhook `https://patrac-api.bednarik.workers.dev/api/billing/webhook`, události `checkout.session.completed` a `checkout.session.async_payment_succeeded`. Podpisový klíč endpointu uložit jako Worker Secret `STRIPE_WEBHOOK_SECRET`.
+4. Až po přípravě schématu a klíčů nastavit Worker proměnné `PATRAC_BILLING_ENABLED=true` a `PATRAC_STRIPE_MODE=test`. V `wrangler.jsonc` záměrně nejsou; `keep_vars: true` zachovává jejich nastavení z dashboardu při dalších deployích. Před jejich nastavením jsou platby i omezení tvorby vypnuté a staré herní funkce nepotřebují nové tabulky.
+5. Ověřit platbu v sandboxu přes profil skutečného testovacího účtu; samotný návrat na úspěšnou stránku nepřidá oprávnění. Podpis webhooku se ověřuje nad přesným tělem a časovým limitem, session se znovu načte ze Stripe a porovná s uloženou objednávkou, cenou, částkou, měnou a účtem. D1 transakce se zámkem podle revize aktivuje každý nákup jednou i při opakovaných událostech; neúspěch vrací chybu pro opakované doručení.
+
+Bez aktivního přístupu se při zapnutém omezení na serveru blokuje vytvoření, úprava i start výpravy. Čtení vlastních výprav, výsledky a akce týmů zůstávají dostupné; rozběhnutou hru lze dokončit. Správce nemá automatickou výjimku. V profilu je výběr tarifu, datum konce a historie plateb. Správcovské udělování přístupu ani automatické řešení vratek zatím nejsou implementované; před ostrým provozem doplnit a ověřit vratky/reklamace, účetní doklady a obchodní podmínky.
+
+Přechod do ostrého provozu je samostatný krok: ověřený vlastní Stripe účet, ostré ceny `STRIPE_PRICE_3`, `STRIPE_PRICE_6`, `STRIPE_PRICE_12`, ostrý klíč i podpis webhooku a `PATRAC_STRIPE_MODE=live`. Sandboxové nákupy nikdy neaktivují ostré oprávnění. Skutečné platby touto změnou nejsou zapnuté.

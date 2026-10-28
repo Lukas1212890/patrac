@@ -1,6 +1,7 @@
 import { storeHintPhotos, removeReplacedPhotos } from './photoStorage.mjs';
 import { allowedOrigin } from '../origin.mjs';
 import { creatorIdentity } from './creator-server';
+import { requirePaidAccess } from './billing.mjs';
 import { env } from 'cloudflare:workers';
 import { GameError, validateExpedition, newTeam, applyAction, teamProjection, stationTimings, score, normalizeAnswer } from './patrac-engine.mjs';
 type Row = { code: string; owner_hash: string; payload: string; version: number };
@@ -50,12 +51,13 @@ async function identity(request: Request, row: Row): Promise<any> {
   const account = await creatorIdentity(request);
   if (account) {
     const owned = await db().prepare('SELECT creator_id FROM patrac_creator_games WHERE code = ? AND creator_id = ?').bind(row.code, account.id).first();
-    if (owned) return { role: 'owner' };
+    if (owned) return { role: 'owner', accountId: account.id };
   }
   return { role: 'guest' };
 }
 export async function createExpedition(request: Request) {
   const account = await creatorIdentity(request, true);
+  await requirePaidAccess(env, account!.id);
   const input = await body(request), config = validateExpedition(input);
   const ownerToken = token(), ownerHash = await hash(ownerToken);
   const game = { ...config, status: 'waiting', startedAt: null, createdAt: Date.now() };
@@ -116,6 +118,7 @@ export async function changeExpedition(request: Request, code: string) {
   }
   const who = await identity(request, row);
   if (who.role === 'owner') {
+    await requirePaidAccess(env, who.accountId);
     if (game.status !== 'waiting') throw new GameError('Pravidla a trasu po startu nelze měnit.', 409);
     let next;
     if (input.action === 'save') {
