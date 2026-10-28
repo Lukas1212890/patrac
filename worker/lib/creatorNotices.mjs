@@ -1,7 +1,28 @@
-export async function creatorNotices(db,userId){
- if(!await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_admin_audit'").first())return{notices:[]};
- const rows=await db.prepare(`SELECT id,json_extract(details,'$.code') AS code,json_extract(details,'$.name') AS name,
-  json_extract(details,'$.reason') AS reason,created_at AS createdAt FROM patrac_admin_audit
-  WHERE target_id=? AND action='delete-expedition' AND status='success' ORDER BY created_at DESC,id DESC LIMIT 20`).bind(userId).all();
- return{notices:rows.results};
+// Derive notices from committed operations: retries never create duplicate messages.
+// Only selected user-facing fields leave the API, never the admin's internal audit data.
+/** @param {any} db @param {string} userId @param {'test'|'live'|null} [environment] */
+export async function creatorNotices(db,userId,environment=null){
+ const tables=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('patrac_admin_audit','patrac_creator_rewards')").all();
+ const available=new Set(tables.results.map(r=>r.name)),notices=[];
+ if(available.has('patrac_admin_audit')){
+  const rows=await db.prepare(`SELECT id,action,details,created_at FROM patrac_admin_audit
+   WHERE target_id=? AND status='success' AND action IN ('delete-expedition','access','limits')
+   AND json_valid(details)
+   AND (action<>'limits' OR json_extract(details,'$.oldPrivateLimit') IS NOT json_extract(details,'$.privateLimit') OR json_extract(details,'$.oldPublicLimit') IS NOT json_extract(details,'$.publicLimit'))
+   AND (action<>'access' OR json_extract(details,'$.environment')=?)
+   ORDER BY created_at DESC,id DESC LIMIT 50`).bind(userId,environment).all();
+  for(const row of rows.results){
+   const d=JSON.parse(row.details),base={id:row.id,type:row.action,createdAt:row.created_at};
+   if(row.action==='delete-expedition')notices.push({...base,code:d.code,name:d.name,reason:d.reason});
+   if(row.action==='access')notices.push({...base,months:d.months,expiresAt:d.expiresAt});
+   if(row.action==='limits'&&(d.oldPrivateLimit!==d.privateLimit||d.oldPublicLimit!==d.publicLimit))notices.push({...base,oldPrivateLimit:d.oldPrivateLimit,oldPublicLimit:d.oldPublicLimit,privateLimit:d.privateLimit,publicLimit:d.publicLimit});
+  }
+ }
+ if(environment&&available.has('patrac_creator_rewards')){
+  const rows=await db.prepare(`SELECT code,expedition_name,milestone,months,granted_at,access_until FROM patrac_creator_rewards
+   WHERE user_id=? AND environment=? ORDER BY granted_at DESC,code,milestone DESC LIMIT 50`).bind(userId,environment).all();
+  for(const r of rows.results)notices.push({id:'reward:'+environment+':'+r.code+':'+r.milestone,type:'reward',code:r.code,name:r.expedition_name,milestone:r.milestone,months:r.months,createdAt:r.granted_at,expiresAt:r.access_until});
+ }
+ notices.sort((a,b)=>b.createdAt-a.createdAt||a.id.localeCompare(b.id));
+ return{notices:notices.slice(0,50)};
 }

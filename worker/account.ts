@@ -1,3 +1,4 @@
+import {billingEnvironment} from './lib/billing.mjs';
 import {accountAuth} from './auth';
 import {availableNickname} from './lib/nicknames.mjs';
 import { env } from 'cloudflare:workers';
@@ -46,4 +47,4 @@ export async function POST(request: Request) {
   } catch (e) { return errorResponse(e); }
 }
 
-export async function notices(request:Request){const who=await creatorIdentity(request,true);return json(await creatorNotices(env.DB,who!.id));}
+export async function notices(request:Request){const who=await creatorIdentity(request,true);return json(await creatorNotices(env.DB,who!.id,billingEnvironment(env)));}

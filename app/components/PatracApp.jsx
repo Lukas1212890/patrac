@@ -42,7 +42,8 @@ function Progress({ index, total }) { return <div className="p-progress" role="p
 
 export default function PatracApp() {
   const account = useCreatorAccount();
-  const notices=useCreatorNotices(account.user?.id);
+  const notificationState=useCreatorNotices(account.user?.id);
+  const notices=notificationState.notices;
   const [accountGames, setAccountGames] = useState([]);
   useEffect(() => {
     if (!account.user) { setAccountGames([]); return; }
@@ -147,18 +148,18 @@ export default function PatracApp() {
   const now = clock + offset.current;
   return <div className={'p-app p-view-' + view + (!account.user ? ' p-guest' : '')}>
     <header className="p-header"><Brand home={home}/><div className="p-header-actions"><span className="p-desktop-label">Dobrodružství začíná venku.</span><button className="p-icon-button" aria-label="Jak se hraje" onClick={() => setHelp(true)}><HelpCircle size={21}/></button><button className="p-icon-button" aria-label={account.user ? "Můj profil" : "Přihlášení"} onClick={() => setView('account')}><UserRound size={20}/></button>{session && <button className="p-icon-button" aria-label="Obnovit průběh" onClick={refresh}><RefreshCw size={19}/></button>}</div></header>
-    {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onOpenGames={()=>navigate('library')}/>}
+    {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onOpenProfile={()=>navigate('account')}/>}
     {!online && <div className="p-connection" role="status">Jste offline. Čas běží dál. Hra se připojí, jakmile bude signál.</div>}
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
     {view === 'home' && <CommunityMap onSelect={showPublic} onJoin={()=>navigate('join')}/>}
     {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>navigate('account')} onStarted={enter}/>}
-    {view==='library'&&<PlayLibrary user={account.user} notices={notices} saved={saved.filter(s=>s.role==='team'&&(!s.userId||s.userId===account.user?.id))} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
+    {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team'&&(!s.userId||s.userId===account.user?.id))} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
     {view==='rankings'&&<CommunityRankings user={account.user} tab={rankingTab} onTabChange={setRankingTab} onGames={()=>navigate('library')} onSelect={showPublic} onAccount={()=>navigate('account')} onMap={home}/>}
     {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={visibility=>visibility==='public'?setRewardNotice(true):openEditor('private')} onGames={()=>navigate('library')}/>}
     {view==='creator'&&rewardNotice&&<CreatorRewardNotice onClose={()=>setRewardNotice(false)} onContinue={()=>{setRewardNotice(false);openEditor('public');}}/>}
 
     {resumeOpen && <SavedGames sessions={availableGames} onEnter={enter} onRestore={restore} onClose={() => setResumeOpen(false)}/>}
-    {view === 'account' && <CreatorAccount user={account.user} recovery={account.recovery} onBack={home} onSignedIn={home} onSignedOut={home} onRecoveryDone={account.finishRecovery}/>}
+    {view === 'account' && <CreatorAccount notificationState={notificationState} user={account.user} recovery={account.recovery} onBack={home} onSignedIn={home} onSignedOut={home} onRecoveryDone={account.finishRecovery}/>}
     {view === 'removed' && <main className="p-narrow p-panel"><h1>Výprava už není dostupná</h1><p>Organizátor ji odstranil nebo její kód už neplatí.</p><button className="p-primary" onClick={home}>Zpět na úvod</button></main>}
     {view === 'join' && <main className="p-narrow"><button className="p-back" onClick={home}><ArrowLeft size={18}/> Zpět</button><div className="p-panel p-join"><Compass className="p-big-icon"/><span className="p-kicker">DOBRODRUŽSTVÍ VOLÁ</span><h1>Zahájit soukromou výpravu</h1><p>Zadejte kód od organizátora. Hrajete pod svou přezdívkou. Můžete vyrazit sami nebo společně na jeden účet. Předplatné není potřeba.</p><form onSubmit={join}><label className="p-label">Kód výpravy<input className="p-code-input" value={code} maxLength={7} required autoCapitalize="characters" autoComplete="off" spellCheck={false} placeholder="LES742A" onChange={e => { setCode(e.target.value.toUpperCase()); }}/></label><button className="p-primary" disabled={busy || !online}>{busy ? 'Připojuji…' : account.user?'Zahájit výpravu':'Přihlásit se a hrát'}<ArrowRight size={18}/></button></form></div></main>}
     {view === 'editor' && account.user && <PatracEditor key={editInitial?.code||('new:'+creationVisibility)} defaultVisibility={creationVisibility} initial={editInitial} onSave={save} saving={busy} onBack={() => editInitial ? setView('owner') : navigate('creator')}/>}

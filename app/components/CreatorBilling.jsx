@@ -20,8 +20,8 @@ export default function CreatorBilling({userId}){
  }
  useEffect(()=>{let live=true;const result=new URLSearchParams(location.search).get('billing');setReturning(result||'');
   const load=async()=>{try{const data=await billingRequest();if(live){setState(data);setError('');}}catch(e){if(live)setError(e.message);}};
-  load();const interval=result==='success'?setInterval(load,3000):null;const timer=interval?setTimeout(()=>clearInterval(interval),60000):null;
-  return()=>{live=false;if(interval)clearInterval(interval);if(timer)clearTimeout(timer);};
+  load();window.addEventListener('patrac-expeditions-changed',load);const interval=result==='success'?setInterval(load,3000):null;const timer=interval?setTimeout(()=>clearInterval(interval),60000):null;
+  return()=>{live=false;window.removeEventListener('patrac-expeditions-changed',load);if(interval)clearInterval(interval);if(timer)clearTimeout(timer);};
  },[userId]);
  async function buy(months){setBusy(true);setError('');try{
   keys.current[months] ||= crypto.randomUUID();
