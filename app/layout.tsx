@@ -10,7 +10,7 @@ export const metadata: Metadata = {
  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Pátrač" },
  icons: { icon: "/favicon.svg", apple: "/patrac-icon-192.png" }
 };
-export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#2348df" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#eaf2ff" };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
  return <html lang="cs"><head><link rel="stylesheet" href="/vendor/maplibre-gl.css"/></head><body><PwaGestureGuard/>{children}</body></html>;
 }

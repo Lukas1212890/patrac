@@ -81,3 +81,11 @@
 .p-creator-reply{margin:14px 0 4px;padding:12px 15px;border-left:3px solid #2348df;border-radius:0 10px 10px 0;background:#edf2ff}.p-creator-reply strong{color:#2348df;font-size:13px}.p-creator-reply p,.p-review-list article>p{white-space:pre-wrap;overflow-wrap:anywhere}.p-reply-form{display:grid;gap:10px;margin-top:12px}.p-notice-review,.p-notice-review-reply{border-color:#a8baf2;background:#f0f5ff}.p-notice-review a,.p-notice-review-reply a{display:block;margin:8px 0}
 
 .p-owner-reviews{margin:16px 0}.p-owner-reviews>summary{cursor:pointer;color:#2348df;font-weight:700;padding:8px 0}.p-owner-reviews .p-reviews{margin:12px 0 0}
+
+/* Keep the home-indicator inset continuous with the app on installed iOS/Android. */
+.p-bottom-nav{background:#eaf2ff}
+html,body{background-color:#eaf2ff}
+@media(display-mode:standalone),(display-mode:fullscreen){
+ body::after{content:"";position:fixed;inset:auto 0 0;height:env(safe-area-inset-bottom,0px);background:#eaf2ff;pointer-events:none;z-index:90}
+}
+html[data-patrac-zoom-locked] body::after{content:"";position:fixed;inset:auto 0 0;height:env(safe-area-inset-bottom,0px);background:#eaf2ff;pointer-events:none;z-index:90}
