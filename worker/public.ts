@@ -7,8 +7,8 @@ import {body,revealPhoto} from './lib/patrac-server';
 import {GameError} from './lib/patrac-engine.mjs';
 export async function publicRequest(request:Request){
  const url=new URL(request.url),api=createPublicService({db:env.DB,env,revealPhoto}),reviews=createReviewService({db:env.DB,env});
- if(url.pathname==='/api/public/expeditions'&&request.method==='GET')return Response.json(await api.listing(url.searchParams.get('bounds')));
  const user=await creatorIdentity(request,false);
+ if(url.pathname==='/api/public/expeditions'&&request.method==='GET')return Response.json(await api.listing(url.searchParams.get('bounds'),user));
  if(url.pathname==='/api/public/rankings'&&request.method==='GET')return Response.json(await createRankingService({db:env.DB,env}).overview(user));
  if(url.pathname==='/api/public/results'&&request.method==='GET')return Response.json(await createRankingService({db:env.DB,env}).results(user,url.searchParams.get('offset')??undefined));
  if(url.pathname==='/api/public/attempts'&&request.method==='GET')return Response.json(await api.history(user));

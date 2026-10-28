@@ -195,3 +195,22 @@ test('abandoned public attempt stays consumed across service instances and is ex
  assert.ok((await fresh.history(f.users.alice)).attempts[0].abandonedAt);
  }finally{f.native.close();}
 });
+
+test('map completion and abandonment belong only to the requesting account and billing environment',async()=>{
+ const f=fixture();try{
+ await f.add('ABCDEFG');await f.api.start('ABCDEFG',f.users.alice,true);await f.api.start('ABCDEFG',f.users.bob,true);
+ await f.api.play('ABCDEFG',f.users.bob,{action:'abandon',confirm:true});
+ for(const [index,lat,lng,answer] of [[0,49.3,17.39,'secret answer'],[1,49.301,17.391,'finish answer']]){
+  f.tick(1000);await f.api.play('ABCDEFG',f.users.alice,{action:'arrive',index,position:{lat,lng,acc:5,timestamp:f.now()}});
+  f.tick(1000);await f.api.play('ABCDEFG',f.users.alice,{action:'answer',index,answer});
+ }
+ assert.equal((await f.api.listing(undefined,f.users.alice)).expeditions[0].playStatus,'completed');
+ assert.equal((await f.api.listing(undefined,f.users.bob)).expeditions[0].playStatus,'abandoned');
+ assert.equal((await f.api.listing(undefined,f.users.unpaid)).expeditions[0].playStatus,null);
+ assert.equal((await f.api.listing()).expeditions[0].playStatus,undefined);
+ const live=createPublicService({db:f.db,env:{...f.env,PATRAC_STRIPE_MODE:'live'},revealPhoto:async h=>h,now:f.now});
+ assert.equal((await live.listing(undefined,f.users.alice)).expeditions[0].playStatus,null);
+ const safe=JSON.stringify(await f.api.listing(undefined,f.users.bob));
+ for(const text of ['alice','bob','user_id','secret answer','abandonedAt','finishedAt'])assert.equal(safe.includes(text),false,text);
+ }finally{f.native.close();}
+});

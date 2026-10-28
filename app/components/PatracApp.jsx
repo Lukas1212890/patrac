@@ -159,7 +159,7 @@ export default function PatracApp() {
     {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onRead={notificationState.markRead} onOpenProfile={()=>navigate('account')}/>}
     {!online && <div className="p-connection" role="status">Jste offline. Čas běží dál. Hra se připojí, jakmile bude signál.</div>}
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
-    {view === 'home' && <CommunityMap onSelect={showPublic} onJoin={()=>navigate('join')}/>}
+    {view === 'home' && <CommunityMap key={account.user?.id||'guest'} userId={account.user?.id} onSelect={showPublic} onJoin={()=>navigate('join')}/>}
     {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>navigate('account')} onStarted={enter} onPrepare={expedition=>{setPreparation(expedition);setView('public-prepare');}}/>}
     {view==='public-prepare'&&preparation&&account.user&&<PublicPreparation key={preparation.code+account.user.id} expedition={preparation} user={account.user} online={online} onStarted={enter} onBack={()=>setView('public-detail')}/>}
     {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team'&&(!s.userId||s.userId===account.user?.id))} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}

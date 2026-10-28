@@ -33,13 +33,22 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
   FROM patrac_public_attempts a JOIN patrac_teams t ON t.id=a.team_id JOIN patrac_auth_user u ON u.id=a.user_id
   WHERE a.code=? AND a.environment=? AND json_extract(t.payload,'$.finishedAt') IS NOT NULL
   ORDER BY totalMs ASC,finishedAt ASC,a.id ASC LIMIT 10`).bind(code,environment).all();return rows.results;}
- async function listing(bounds){if(!await communityReady(db))return{ready:false,expeditions:[]};
+ /** @param {string|null|undefined} bounds @param {{id:string}|null} user */
+ async function listing(bounds,user=null){if(!await communityReady(db))return{ready:false,expeditions:[]};
   let box=[-180,-85,180,85];if(bounds){box=bounds.split(',').map(Number);if(box.length!==4||!box.every(Number.isFinite)||box[0]<-180||box[2]>180||box[1]<-90||box[3]>90||box[0]>box[2]||box[1]>box[3])throw new GameError('Neplatná oblast mapy.');}
   const rows=await db.prepare(`SELECT ${CARD} ${BASE} WHERE ${PUBLIC} AND json_extract(e.payload,'$.stations[0].lng') BETWEEN ? AND ? AND json_extract(e.payload,'$.stations[0].lat') BETWEEN ? AND ? ORDER BY e.code LIMIT 151`).bind(box[0],box[2],box[1],box[3]).all();
   const expeditions=rows.results.slice(0,150).map(safeCard);
   if(expeditions.length&&await reviewsReady(db)){
    const ratings=[];for(let offset=0;offset<expeditions.length;offset+=90){const group=expeditions.slice(offset,offset+90);const page=await db.prepare(`SELECT code,COUNT(*) AS count,ROUND(AVG(stars),1) AS average FROM patrac_public_reviews WHERE environment=? AND code IN (${group.map(()=>'?').join(',')}) GROUP BY code`).bind(environment,...group.map(e=>e.code)).all();ratings.push(...page.results);}
    const byCode=new Map(ratings.map(r=>[r.code,{count:r.count,average:r.average}]));for(const item of expeditions)item.rating=byCode.get(item.code)||{count:0,average:null};
+  }
+  if(user&&expeditions.length){
+   const states=new Map();
+   for(let offset=0;offset<expeditions.length;offset+=90){const group=expeditions.slice(offset,offset+90);
+    const attempts=await db.prepare(`SELECT a.code,json_extract(t.payload,'$.finishedAt') AS finishedAt,json_extract(t.payload,'$.abandonedAt') AS abandonedAt FROM patrac_public_attempts a JOIN patrac_teams t ON t.id=a.team_id WHERE a.user_id=? AND a.environment=? AND a.code IN (${group.map(()=>'?').join(',')})`).bind(user.id,environment,...group.map(e=>e.code)).all();
+    for(const a of attempts.results)states.set(a.code,a.finishedAt?'completed':a.abandonedAt?'abandoned':null);
+   }
+   for(const item of expeditions)item.playStatus=states.get(item.code)||null;
   }
   return{ready:true,expeditions,hasMore:rows.results.length>150};
  }
