@@ -12,7 +12,7 @@ function d1(native){
 }
 async function fixture(mailFailure=false,billingMode=null){
   const db=new DatabaseSync(':memory:');
-  for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0003_account_admin.sql','0004_billing.sql'])db.exec(readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
+  for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0009_player_accounts.sql','0003_account_admin.sql','0004_billing.sql'])db.exec(readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
   const hash=await hashPassword(password),stamp=Date.now(),sent=[];
   for(const [id,email,name]of[['admin','admin@example.com','Správce'],['target','target@example.com','Tvůrce'],['regular','regular@example.com','Běžný účet']]){
     db.prepare('INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,1,?,?)').run(id,name,email,stamp,stamp);

@@ -12,7 +12,7 @@ test('Worker HTTP admin routes enforce origins and real session roles before exp
     assert.equal((await request('/api/admin/users')).status,401);
     assert.equal((await request('/api/admin/users',{action:'revoke',id:'admin'},null,'')).status,403);
     const db=await mf.getD1Database('DB');
-    for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0003_account_admin.sql']){
+    for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0009_player_accounts.sql','0003_account_admin.sql']){
       for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run();
     }
     const stamp=Date.now(),password='native-worker-admin-test-password-923',hash=await hashPassword(password);

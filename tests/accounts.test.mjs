@@ -69,3 +69,16 @@ test('safe delivery error code reaches the browser without credentials or messag
   const body = await r.json(); assert.equal(body.code, 'MAIL_SIGNATURE_INVALID'); assert.equal(JSON.stringify(body).includes(password), false);
   f.db.close();
 });
+
+test('nicknames normalize Unicode, case and whitespace and reject duplicate registrations',async()=>{
+ const f=await fixture();
+ const create=(email,name)=>f.request('sign-up/email',{email,name,password,callbackURL:origin});
+ assert.equal((await create('one@example.com','  ŽLUŤÁK  ')).status,200);
+ const duplicate=await create('two@example.com','žluťák');assert.equal(duplicate.status,400);assert.equal((await duplicate.json()).code,'NICKNAME_TAKEN');
+ assert.equal(f.db.prepare('SELECT count(*) AS n FROM patrac_auth_user').get().n,1);
+ assert.equal(f.db.prepare('SELECT name,nicknameKey FROM patrac_auth_user').get().nicknameKey,'žluťák');
+ const parallel=await Promise.all([create('three@example.com','Nový hráč'),create('four@example.com','NOVÝ HRÁČ')]);
+ assert.equal(parallel.filter(r=>r.status===200).length,1);
+ assert.equal(f.db.prepare('SELECT count(*) AS n FROM patrac_auth_user WHERE nicknameKey=?').get('nový hráč').n,1);
+ assert.notEqual((await create('five@example.com','\u200b')).status,200);f.db.close();
+});

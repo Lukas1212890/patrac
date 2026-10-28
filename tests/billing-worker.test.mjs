@@ -5,7 +5,7 @@ import {Miniflare} from 'miniflare';
 import {readFileSync} from 'node:fs';
 import {hashPassword} from 'better-auth/crypto';
 import {validateExpedition,newTeam} from '../worker/lib/patrac-engine.mjs';
-test('real Worker requires account and paid access, verifies webhook signature, and preserves anonymous play',async()=>{
+test('real Worker requires account and paid access, verifies webhook signature, and requires accounts for private play without a paid subscription',async()=>{
  const built=await build({entryPoints:['worker/index.ts'],bundle:true,format:'esm',platform:'browser',external:['cloudflare:workers','node:*'],write:false,logLevel:'silent'});
  const secret='whsec_local_worker_fixture';
  const mf=new Miniflare({modules:[{type:'ESModule',path:process.cwd()+'/worker/billing-test.mjs',contents:built.outputFiles[0].text}],modulesRoot:process.cwd(),compatibilityDate:'2026-05-22',compatibilityFlags:['nodejs_compat'],cf:false,d1Databases:['DB'],r2Buckets:['BUCKET'],bindings:{PATRAC_AUTH_SECRET:'local-billing-worker-test-key-never-used-in-production',PATRAC_AUTH_BASE_URL:'http://localhost:8790',PATRAC_ALLOWED_ORIGINS:'http://localhost:3000',PATRAC_REGISTRATION_READY:'false',PATRAC_BILLING_ENABLED:'true',PATRAC_STRIPE_MODE:'test',STRIPE_WEBHOOK_SECRET:secret}});
@@ -13,11 +13,17 @@ test('real Worker requires account and paid access, verifies webhook signature, 
  try{
   assert.equal((await request('/api/billing')).status,401);
   const db=await mf.getD1Database('DB');
-  for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0003_account_admin.sql','0004_billing.sql'])for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run();
+  for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0009_player_accounts.sql','0003_account_admin.sql','0004_billing.sql'])for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run();
   const stamp=Date.now(),password='native-worker-billing-test-password',hash=await hashPassword(password);
   await db.prepare("INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES('user','Tester','user@example.com',1,?,?)").bind(stamp,stamp).run();
   await db.prepare("INSERT INTO patrac_auth_account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES('user','user','credential','user',?,?,?)").bind(hash,stamp,stamp).run();
   const login=await request('/api/auth/sign-in/email',{email:'user@example.com',password});assert.equal(login.status,200);const token=login.headers.get('set-auth-token');
+  const players={};
+  for(const id of ['player','late']){
+    await db.prepare('INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,1,?,?)').bind(id,id,id+'@example.com',stamp,stamp).run();
+    await db.prepare("INSERT INTO patrac_auth_account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES(?,?,'credential',?,?,?,?)").bind(id,id,id,hash,stamp,stamp).run();
+    const response=await request('/api/auth/sign-in/email',{email:id+'@example.com',password});assert.equal(response.status,200);players[id]=response.headers.get('set-auth-token');
+  }
   const state=await request('/api/billing',null,token);assert.equal(state.status,200);assert.equal((await state.json()).active,false);
   assert.equal((await request('/api/billing/checkout',{months:3,requestKey:crypto.randomUUID()},token,'')).status,403);
   assert.equal((await request('/api/expeditions',{name:'Cannot create'},token)).status,402);
@@ -27,11 +33,29 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   assert.equal((await request('/api/expeditions/ABCDEFG',null,token)).status,200);
   assert.equal((await request('/api/expeditions/ABCDEFG',{action:'save',game},token)).status,402);
   assert.equal((await request('/api/expeditions/ABCDEFG',{action:'start'},token)).status,402);
-  const teamToken='a'.repeat(64);assert.equal((await request('/api/expeditions/ABCDEFG',{action:'join',name:'Anonymous team',teamToken})).status,201);
+  const teamToken='a'.repeat(64);assert.equal((await request('/api/expeditions/ABCDEFG',{action:'join',name:'Anonymous team',teamToken})).status,401);
+  assert.equal((await request('/api/expeditions/ABCDEFG',{action:'join',name:'Impersonation'},players.player)).status,201);
+  assert.equal((await request('/api/expeditions/ABCDEFG',{action:'join'},players.player)).status,200);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_teams WHERE code=?').bind('ABCDEFG').first()).n,1);
+  const history=await(await request('/api/account',null,players.player)).json();assert.equal(history.privateGames[0].gameName,'Saved game');
+  const otherView=await(await request('/api/expeditions/ABCDEFG',null,players.late)).json();assert.equal(otherView.role,'guest');
+  assert.equal((await request('/api/account',{action:'nickname',name:'Nový',oldName:'player',password:'wrong',acknowledge:true},players.player)).status,401);
+  assert.equal((await request('/api/account',{action:'nickname',name:'Nový',oldName:'player',password,acknowledge:false},players.player)).status,409);
+  assert.equal((await request('/api/account',{action:'nickname',name:'LATE',oldName:'player',password,acknowledge:true},players.player)).status,409);
+  assert.equal((await request('/api/account',{action:'nickname',name:'Nový',oldName:'player',password,acknowledge:true},players.player)).status,200);
+  assert.equal((await request('/api/account',{action:'nickname',name:'player',oldName:'late',password,acknowledge:true},players.late)).status,200);
+  const refreshed=await(await request('/api/expeditions/ABCDEFG',null,players.player)).json();assert.equal(refreshed.team.name,'Nový');
+  // A legacy key is accepted only together with an account, and can be claimed once.
+  const legacyToken='d'.repeat(64),legacyHash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(legacyToken))).toString('hex');
+  const legacy=newTeam('legacy-player','Old group',stamp);
+  await db.prepare('INSERT INTO patrac_teams(id,code,token_hash,name_key,payload,version) VALUES(?,?,?,?,?,0)').bind(legacy.id,'ABCDEFG',legacyHash,'old-group',JSON.stringify(legacy)).run();
+  assert.equal((await request('/api/expeditions/ABCDEFG',{action:'join',teamToken:legacyToken})).status,401);
+  assert.equal((await request('/api/expeditions/ABCDEFG',{action:'join',teamToken:legacyToken},players.late)).status,200);
+  assert.equal((await db.prepare('SELECT user_id FROM patrac_teams WHERE id=?').bind(legacy.id).first()).user_id,'late');
   game.status='running';game.startedAt=Date.now();await db.prepare('UPDATE patrac_expeditions SET payload=? WHERE code=?').bind(JSON.stringify(game),'ABCDEFG').run();
-  const arrive=await mf.dispatchFetch('http://localhost:8790/api/expeditions/ABCDEFG',{method:'POST',headers:{Origin:'http://localhost:3000','Content-Type':'application/json',Authorization:'Bearer '+teamToken},body:JSON.stringify({action:'arrive',index:0,position:{lat:49.3,lng:17.39,acc:5,timestamp:Date.now()}})});assert.equal(arrive.status,200,await arrive.clone().text());
-  const summary=await mf.dispatchFetch('http://localhost:8790/api/expeditions/ABCDEFG?summary=1',{headers:{Origin:'http://localhost:3000',Authorization:'Bearer '+teamToken}});
-  assert.equal(summary.status,200);const compact=await summary.json();assert.equal(compact.role,'team');assert.equal(compact.game.name,'Saved game');assert.equal(compact.team.name,'Anonymous team');assert.deepEqual(Object.keys(compact.team).sort(),['finishedAt','index','name']);assert.equal(JSON.stringify(compact).includes('Otázka'),false);
+  const arrive=await mf.dispatchFetch('http://localhost:8790/api/expeditions/ABCDEFG',{method:'POST',headers:{Origin:'http://localhost:3000','Content-Type':'application/json','X-Patrac-Account':players.player},body:JSON.stringify({action:'arrive',index:0,position:{lat:49.3,lng:17.39,acc:5,timestamp:Date.now()}})});assert.equal(arrive.status,200,await arrive.clone().text());
+  const summary=await mf.dispatchFetch('http://localhost:8790/api/expeditions/ABCDEFG?summary=1',{headers:{Origin:'http://localhost:3000','X-Patrac-Account':players.player}});
+  assert.equal(summary.status,200);const compact=await summary.json();assert.equal(compact.role,'team');assert.equal(compact.game.name,'Saved game');assert.equal(compact.team.name,'Nový');assert.deepEqual(Object.keys(compact.team).sort(),['finishedAt','index','name']);assert.equal(JSON.stringify(compact).includes('Otázka'),false);
   assert.equal((await request('/api/billing/webhook',{type:'checkout.session.completed'},null,'')).status,400);
   const raw=JSON.stringify({type:'unrelated.event',livemode:false}),time=Math.floor(Date.now()/1000);
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
@@ -50,7 +74,7 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   const waiting={...game,status:'waiting',startedAt:null,stations:[...game.stations,{...game.stations[0],id:'s1',name:'Druhé místo'}]};
   await db.prepare('INSERT INTO patrac_expeditions VALUES(?,?,?,0)').bind('HJKLMNP','owner-hash',JSON.stringify(waiting)).run();
   await db.prepare('INSERT INTO patrac_creator_games VALUES(?,?,?)').bind('HJKLMNP','user',stamp).run();
-  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'join',name:'Waiting team',teamToken:'b'.repeat(64)})).status,201);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'join',name:'Waiting team',teamToken:'b'.repeat(64)},players.player)).status,201);
   const edited={...waiting,name:'Celá upravená výprava',mode:'treasure',stations:[{...waiting.stations[0],question:'Nová hádanka',answer:'nová odpověď'}]};
   const saved=await request('/api/expeditions/HJKLMNP',{action:'save',game:edited,version:0},token);assert.equal(saved.status,200,await saved.clone().text());
   const newGame=(await(await request('/api/expeditions/HJKLMNP',null,token)).json()).game;
@@ -61,8 +85,8 @@ test('real Worker requires account and paid access, verifies webhook signature, 
 
   // Finishing does not close the route, and a later team gets its own clock.
   await db.prepare("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',?,'$.index',1) WHERE code=?").bind(Date.now()-1000,'HJKLMNP').run();
-  const lateJoin=await request('/api/expeditions/HJKLMNP',{action:'join',name:'Další skupina',teamToken:'c'.repeat(64)});assert.equal(lateJoin.status,201);
-  const late=await db.prepare("SELECT payload FROM patrac_teams WHERE code=? AND name_key=?").bind('HJKLMNP','dalsi skupina').first();assert.ok(JSON.parse(late.payload).startedAt>=stamp);
+  const lateJoin=await request('/api/expeditions/HJKLMNP',{action:'join',name:'Další skupina',teamToken:'c'.repeat(64)},players.late);assert.equal(lateJoin.status,201);
+  const late=await db.prepare("SELECT payload FROM patrac_teams WHERE code=? AND name_key=?").bind('HJKLMNP','account:late').first();assert.ok(JSON.parse(late.payload).startedAt>=stamp);
   const profile=await(await request('/api/account',null,token)).json();assert.equal(profile.expeditionCount,2);assert.equal(profile.expeditionLimit,3);
   // The final free slot is reserved atomically even from simultaneous requests.
   const creations=await Promise.all([request('/api/expeditions',edited,token),request('/api/expeditions',edited,token)]);

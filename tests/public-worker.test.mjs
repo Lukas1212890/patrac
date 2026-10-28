@@ -10,7 +10,7 @@ test('Worker community flow enforces real sessions, two public slots, one concur
  const mf=new Miniflare({modules:[{type:'ESModule',path:process.cwd()+'/worker/public-worker-test.mjs',contents:built.outputFiles[0].text}],modulesRoot:process.cwd(),compatibilityDate:'2026-05-22',compatibilityFlags:['nodejs_compat'],cf:false,d1Databases:['DB'],r2Buckets:['BUCKET'],bindings:{PATRAC_AUTH_SECRET:'local-community-worker-key-not-for-production-8642',PATRAC_AUTH_BASE_URL:'http://localhost:8790',PATRAC_ALLOWED_ORIGINS:'http://localhost:3000',PATRAC_BILLING_ENABLED:'true',PATRAC_STRIPE_MODE:'test',PATRAC_REGISTRATION_READY:'false'}});
  const request=(path,body,token)=>mf.dispatchFetch('http://localhost:8790'+path,{method:body?'POST':'GET',headers:{Origin:'http://localhost:3000','Content-Type':'application/json',...(token?{'X-Patrac-Account':token,...(path.startsWith('/api/auth/')?{Authorization:'Bearer '+token}:{})}:{})},...(body?{body:JSON.stringify(body)}:{})});
  try{
-  const db=await mf.getD1Database('DB');for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0003_account_admin.sql','0004_billing.sql','0008_creator_limits.sql'])for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
+  const db=await mf.getD1Database('DB');for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0009_player_accounts.sql','0003_account_admin.sql','0004_billing.sql','0008_creator_limits.sql'])for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
   const before=await(await request('/api/public/expeditions')).json();assert.equal(before.ready,false);
   for(const sql of readFileSync(new URL('../drizzle/0005_public_expeditions.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
   for(const sql of readFileSync(new URL('../drizzle/0006_public_reviews.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
@@ -58,7 +58,8 @@ test('Worker community flow enforces real sessions, two public slots, one concur
   assert.equal((await request('/api/public/expeditions/'+code+'/play',{action:'answer',index:0,answer:'first'},tokens.player)).status,403);
   const arrive=await request('/api/public/expeditions/'+code+'/play',{action:'arrive',index:0,position:{lat:49.3,lng:17.39,acc:5,timestamp:Date.now()}},tokens.player);assert.equal(arrive.status,200,await arrive.clone().text());
   const riddle=await(await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).json();assert.equal(riddle.team.station.question,'Secret one');assert.equal(riddle.team.station.hints[0].content,undefined);
-  assert.equal((await request('/api/auth/update-user',{name:'New nickname'},tokens.player)).status,200);
+  assert.equal((await request('/api/auth/update-user',{name:'New nickname'},tokens.player)).status,403);
+  assert.equal((await request('/api/account',{action:'nickname',name:'New nickname',oldName:'player',password,acknowledge:true},tokens.player)).status,200);
   const repeated=await(await request('/api/public/expeditions/'+code+'/start',{confirm:true},tokens.player)).json();assert.equal(repeated.attempt.id,first.attempt.id);assert.equal(repeated.attempt.startedAt,first.attempt.startedAt);
   const reviewPath='/api/public/expeditions/'+code+'/reviews';
   assert.equal((await request(reviewPath,{action:'save',stars:5,comment:'Pěkné!'})).status,401);
@@ -67,7 +68,7 @@ test('Worker community flow enforces real sessions, two public slots, one concur
   await request('/api/public/expeditions/'+code+'/play',{action:'arrive',index:1,position:{lat:49.301,lng:17.391,acc:5,timestamp:Date.now()}},tokens.player);
   for(let i=0;i<99;i++){const id='reward-player-'+i,team='reward-team-'+i;await db.batch([
    db.prepare('INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,1,?,?)').bind(id,'ZZ hráč '+i,id+'@example.com',stamp,stamp),
-   db.prepare('INSERT INTO patrac_teams VALUES(?,?,?,?,?,0)').bind(team,code,'token-'+team,'name-'+team,JSON.stringify({...newTeam(team,'ZZ hráč '+i,stamp),startedAt:stamp-999999,finishedAt:stamp-1,penaltyMs:0,index:2})),
+   db.prepare('INSERT INTO patrac_teams(id,code,token_hash,name_key,payload,version) VALUES(?,?,?,?,?,0)').bind(team,code,'token-'+team,'name-'+team,JSON.stringify({...newTeam(team,'ZZ hráč '+i,stamp),startedAt:stamp-999999,finishedAt:stamp-1,penaltyMs:0,index:2})),
    db.prepare("INSERT INTO patrac_public_attempts VALUES(?,?,?,?,?,'test')").bind(team,code,id,team,stamp),
   ]);}
   assert.equal((await request('/api/public/expeditions/'+code+'/play',{action:'answer',index:1,answer:'last'},tokens.player)).status,200);

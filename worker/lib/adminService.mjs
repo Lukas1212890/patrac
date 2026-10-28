@@ -1,3 +1,4 @@
+import {availableNickname} from './nicknames.mjs';
 import { addMonths } from './billing.mjs';
 import {deleteAsAdmin} from './adminExpeditionDeletion.mjs';
 import {creatorLimits,changeCreatorLimits} from './creatorLimits.mjs';
@@ -107,7 +108,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       if (action === 'update') {
         if (typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 60) throw new AdminError('Přezdívka musí mít 1 až 60 znaků.');
         if (typeof input.email !== 'string' || input.email.length > 254 || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(input.email.trim())) throw new AdminError('Zadejte platný e-mail.');
-        name = input.name.trim(); email = input.email.trim().toLowerCase(); emailChanged = email !== user.email.toLowerCase();
+        try{name=(await availableNickname(db,input.name,user.id)).name;}catch(e){throw new AdminError(e.message,409,'ADMIN_NICKNAME_TAKEN');} email = input.email.trim().toLowerCase(); emailChanged = email !== user.email.toLowerCase();
         if (String(input.updatedAt) !== String(user.updatedAt)) throw new AdminError('Účet mezitím změnilo jiné okno. Obnovte detail.',409,'ADMIN_CONFLICT');
         if (emailChanged && await db.prepare('SELECT id FROM patrac_auth_user WHERE lower(email) = ? AND id != ?').bind(email,user.id).first()) throw new AdminError('Tento e-mail už používá jiný účet.',409,'ADMIN_EMAIL_TAKEN');
         if (name === user.name && !emailChanged) return { ok: true, message: 'Údaje už jsou aktuální.' };
@@ -117,8 +118,8 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       try {
         if (action === 'update') {
           const revision = Math.max(now(),(new Date(user.updatedAt).getTime() || 0)+1);
-          const update = db.prepare('UPDATE patrac_auth_user SET name = ?, email = ?, emailVerified = ?, updatedAt = ? WHERE id = ? AND updatedAt = ?')
-            .bind(name,email,emailChanged ? 0 : user.emailVerified,revision,user.id,user.updatedAt);
+          const update = db.prepare('UPDATE patrac_auth_user SET name = ?, nicknameKey = ?, email = ?, emailVerified = ?, updatedAt = ? WHERE id = ? AND updatedAt = ?')
+            .bind(name,name.toLocaleLowerCase('cs'),email,emailChanged ? 0 : user.emailVerified,revision,user.id,user.updatedAt);
           // In one transaction, changing the address invalidates both sessions and old recovery links.
           const guard = 'EXISTS (SELECT 1 FROM patrac_auth_user WHERE id = ? AND email = ? AND updatedAt = ?)';
           const changed = emailChanged ? (await db.batch([
@@ -141,6 +142,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       } catch (error) {
         await finish(auditId,'failed');
         if (error instanceof AdminError) throw error;
+        if (/UNIQUE.*nicknameKey/.test(String(error?.message||'')))throw new AdminError('Tato přezdívka je už obsazená.',409,'ADMIN_NICKNAME_TAKEN');
         if (String(error?.message || '').includes('UNIQUE constraint')) throw new AdminError('Tento e-mail už používá jiný účet.',409,'ADMIN_EMAIL_TAKEN');
         throw new AdminError('Akci se nepodařilo dokončit. Zkuste obnovit detail účtu.',503,'ADMIN_ACTION_FAILED');
       }

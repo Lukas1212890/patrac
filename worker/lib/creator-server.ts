@@ -2,7 +2,7 @@ import { accountAuth } from '../auth';
 import { GameError } from './patrac-engine.mjs';
 export async function creatorIdentity(request: Request, required = false) {
   const token = request.headers.get('x-patrac-account');
-  if (!token) { if (required) throw new GameError('Pro správu výprav se přihlaste k účtu tvůrce.', 401); return null; }
+  if (!token) { if (required) throw new GameError('Pro hraní a správu výprav se přihlaste k účtu Pátrače.', 401); return null; }
   if (token.length > 1024 || !/^[A-Za-z0-9_+%/.=-]+$/.test(token)) throw new GameError('Přihlášení není platné.', 401);
   const headers = new Headers({ Authorization: 'Bearer ' + token });
   const session = await accountAuth().api.getSession({ headers });

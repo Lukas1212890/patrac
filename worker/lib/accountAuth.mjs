@@ -1,5 +1,8 @@
 import { betterAuth } from 'better-auth';
+import {APIError,createAuthMiddleware} from 'better-auth/api';
+import {nickname} from './nicknames.mjs';
 import { bearer } from 'better-auth/plugins/bearer';
+async function nicknameUsers(adapter){const all=[];for(let offset=0;;offset+=1000){const page=await adapter.findMany({model:'user',limit:1000,offset});all.push(...page);if(page.length<1000)return all;}}
 export function createAccountAuth(settings) { return betterAuth({
     appName: 'Pátrač',
     baseURL: settings.PATRAC_AUTH_BASE_URL,
@@ -7,7 +10,12 @@ export function createAccountAuth(settings) { return betterAuth({
     secret: settings.PATRAC_AUTH_SECRET,
     database: settings.DB,
     trustedOrigins: settings.PATRAC_ALLOWED_ORIGINS.split(',').map(x => x.trim()).filter(Boolean),
-    user: { modelName: 'patrac_auth_user' },
+    user: { modelName: 'patrac_auth_user', additionalFields:{nicknameKey:{type:'string',required:false,input:false,returned:false,unique:true}} },
+    hooks:{before:createAuthMiddleware(async ctx=>{
+      if(ctx.path!=='/sign-up/email')return;
+      try{const data=nickname(ctx.body.name),users=await nicknameUsers(ctx.context.adapter);if(users.some(u=>nickname(u.name).nicknameKey===data.nicknameKey))throw Error('Tato přezdívka je už obsazená.');ctx.body.name=data.name;}catch(e){throw new APIError('BAD_REQUEST',{code:'NICKNAME_TAKEN',message:e.message});}
+    })},
+    databaseHooks:{user:{create:{before:async user=>({data:{...user,...nickname(user.name)}})},update:{before:async user=>user.name===undefined?undefined:{data:{...user,...nickname(user.name)}}}}},
     session: { modelName: 'patrac_auth_session', expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: false } },
     account: { modelName: 'patrac_auth_account' },
     verification: { modelName: 'patrac_auth_verification' },
