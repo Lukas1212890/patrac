@@ -1,8 +1,9 @@
 import { storeHintPhotos, removeReplacedPhotos } from './photoStorage.mjs';
+import {communityReady,validatePublicInfo,requirePublicAccess} from './publicExpeditions.mjs';
 import { allowedOrigin } from '../origin.mjs';
 import { creatorIdentity } from './creator-server';
 import { requirePaidAccess } from './billing.mjs';
-import { EXPEDITION_LIMIT, expeditionCount, reserveExpedition, removeExpedition } from './expeditionLifecycle.mjs';
+import { EXPEDITION_LIMIT, PUBLIC_EXPEDITION_LIMIT, expeditionCount, reserveExpedition, removeExpedition } from './expeditionLifecycle.mjs';
 import { env } from 'cloudflare:workers';
 import { GameError, validateExpedition, newTeam, applyAction, teamProjection, stationTimings, score, normalizeAnswer } from './patrac-engine.mjs';
 type Row = { code: string; owner_hash: string; payload: string; version: number };
@@ -11,12 +12,12 @@ export const json = (data: unknown, status = 200) => Response.json(data, { statu
 const token = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), v => v.toString(16).padStart(2, '0')).join('');
 async function hash(value: string) { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), v => v.toString(16).padStart(2, '0')).join(''); }
 const db = () => { if (!env.DB) throw new GameError('Úložiště výprav není dostupné.', 503); return env.DB; };
-export async function body(request: Request) {
+export async function body(request: Request, limit=14000000) {
   if (request.headers.get('origin') && !allowedOrigin(request.headers.get('origin')!, env.PATRAC_ALLOWED_ORIGINS)) throw new GameError('Nepovolený původ požadavku.', 403);
   if (!request.headers.get('content-type')?.includes('application/json')) throw new GameError('Očekáváme JSON.', 415);
   const reader = request.body?.getReader(); let size = 0; const chunks: Uint8Array[] = [];
   if (!reader) throw new GameError('Chybí data.');
-  while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > 14000000) { await reader.cancel(); throw new GameError('Výprava je příliš velká. Zmenšete fotografie.', 413); } chunks.push(value); }
+  while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > limit) { await reader.cancel(); throw new GameError('Výprava je příliš velká. Zmenšete fotografie.', 413); } chunks.push(value); }
   const all = new Uint8Array(size); let at = 0; for (const chunk of chunks) { all.set(chunk, at); at += chunk.length; }
   try { return JSON.parse(new TextDecoder().decode(all)); } catch { throw new GameError('Neplatná data.'); }
 }
@@ -29,7 +30,7 @@ async function storePhotos(config: any, code: string, previous?: any) {
   if (!env.BUCKET && config.stations.some((s: any) => s.hints.some((h: any) => h.type === 'photo'))) throw new GameError('Úložiště fotografií není dostupné.', 503);
   return storeHintPhotos(config, code, env.BUCKET, previous);
 }
-async function revealPhoto(hint: any) {
+export async function revealPhoto(hint: any) {
   if (hint.type !== 'photo' || !hint.photoKey) return hint;
   const object = await env.BUCKET?.get(hint.photoKey);
   if (!object) throw new GameError('Fotografii se nepodařilo načíst. Zkuste obnovit spojení.', 503);
@@ -59,8 +60,14 @@ async function identity(request: Request, row: Row): Promise<any> {
 export async function createExpedition(request: Request) {
   const account = await creatorIdentity(request, true);
   await requirePaidAccess(env, account!.id);
-  if (await expeditionCount(db(), account!.id) >= EXPEDITION_LIMIT) throw new GameError('Na účtu můžete mít nejvýše 3 uložené výpravy. Pro novou nejprve některou smažte včetně dokončených.',409);
-  const input = await body(request), config = validateExpedition(input);
+  const input = await body(request), visibility=input.visibility||'private';
+  if(!['private','public'].includes(visibility))throw new GameError('Vyberte soukromou nebo veřejnou výpravu.');
+  if(visibility==='public')await requirePublicAccess(db(),env,account!.id);
+  if(visibility==='public'&&!await communityReady(db()))throw new GameError('Veřejné výpravy se právě připravují.',503);
+  const limit=visibility==='public'?PUBLIC_EXPEDITION_LIMIT:EXPEDITION_LIMIT;
+  if (await expeditionCount(db(), account!.id,visibility) >= limit) throw new GameError(visibility==='public'?'Na účtu můžete mít 2 veřejné výpravy. Pro další nejprve některou smažte.':'Na účtu můžete mít 3 soukromé výpravy. Pro další nejprve některou smažte.',409);
+  const config = {...validateExpedition(input),visibility,...(visibility==='public'?{publicInfo:validatePublicInfo(input.publicInfo),published:false}:{})};
+  if(visibility==='public'&&config.mode!=='race')throw new GameError('Veřejné výpravy se hrají výhradně na čas.');
   const ownerToken = token(), ownerHash = await hash(ownerToken);
   const game = { ...config, status: 'waiting', startedAt: null, createdAt: Date.now() };
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -71,15 +78,16 @@ export async function createExpedition(request: Request) {
     const results = await reserveExpedition(db(), {code, ownerHash, payload:JSON.stringify(stored), userId:account!.id, now:Date.now()});
     if (results[1].meta.changes) return json({ code, ownerToken }, 201);
     try { await removeReplacedPhotos(stored,{stations:[]},code,env.BUCKET); } catch { console.warn('Patrac rejected creation photo cleanup failed'); }
-    if (await expeditionCount(db(),account!.id)>=EXPEDITION_LIMIT) throw new GameError('Na účtu už máte 3 výpravy. Před vytvořením nové některou smažte.',409);
+    if (await expeditionCount(db(),account!.id,visibility)>=limit) throw new GameError('Dosáhli jste limitu '+limit+' '+(visibility==='public'?'veřejných':'soukromých')+' výprav.',409);
   }
   throw new GameError('Kód se nepodařilo vytvořit. Zkuste to znovu.', 503);
 }
 export async function viewExpedition(request: Request, code: string) {
   const { row, game } = await getGame(code), who = await identity(request, row), now = Date.now();
   if (game.status === 'deleting' && who.role !== 'owner') throw new GameError('Organizátor tuto výpravu odstranil.',410);
-  const meta = { code, name: game.name, mode: game.mode, status: game.status, startedAt: game.startedAt, totalStations: game.stations.length };
+  const meta = { code, name: game.name, mode: game.mode, status: game.status, startedAt: game.startedAt, totalStations: game.stations.length, visibility:game.visibility||'private' };
   if (who.role === 'owner') {
+    const publicLocked=game.visibility==='public'?!!await db().prepare('SELECT id FROM patrac_public_attempts WHERE code=? LIMIT 1').bind(code).first():false;
     const rows = await db().prepare('SELECT payload FROM patrac_teams WHERE code = ?').bind(code).all<any>();
     const teams = rows.results.map(r => JSON.parse(r.payload)).map(t => ({ ...t, ...score(game, t, now), timings: stationTimings(game, t) }));
     teams.sort((a, b) => (a.finishedAt ? 0 : 1) - (b.finishedAt ? 0 : 1) || (a.finishedAt && b.finishedAt ? (game.mode === 'race' ? a.totalMs - b.totalMs : a.finishedAt - b.finishedAt) : b.index - a.index) || a.joinedAt - b.joinedAt);
@@ -87,8 +95,9 @@ export async function viewExpedition(request: Request, code: string) {
     if (new URL(request.url).searchParams.get('photos') === '1') {
       for (const station of expanded.stations) station.hints = await Promise.all(station.hints.map(revealPhoto));
     }
-    return json({ role: 'owner', game: { ...expanded, ...meta }, teams, now, version: row.version });
+    return json({ role: 'owner', game: { ...expanded, ...meta }, teams, publicLocked, now, version: row.version });
   }
+  if (game.visibility==='public') return json({role:'guest',game:meta,now});
   if (who.role === 'team') {
     const counts = await db().prepare("SELECT COUNT(*) as total, SUM(CASE WHEN json_extract(payload, '$.finishedAt') IS NOT NULL THEN 1 ELSE 0 END) as finished FROM patrac_teams WHERE code = ?").bind(code).first();
     const projection = teamProjection(game, who.team, now);
@@ -109,6 +118,7 @@ export async function changeExpedition(request: Request, code: string) {
     return json(await removeExpedition(db(),env.BUCKET,{code,userId:account!.id,version:input.version,confirmation:input.confirmation}));
   }
   if (game.status === 'deleting') throw new GameError('Výprava se právě maže.',410);
+  if (game.visibility==='public'&&['join','arrive','hint','answer'].includes(input.action))throw new GameError('Veřejnou výpravu zahajte přihlášeným účtem z mapy.',403);
   if (input.action === 'join') {
     if (!/^[a-f0-9]{64}$/.test(input.teamToken || '')) throw new GameError('Neplatný klíč týmu.');
     const name = typeof input.name === 'string' ? input.name.trim() : '';
@@ -125,6 +135,26 @@ export async function changeExpedition(request: Request, code: string) {
   }
   const who = await identity(request, row);
   if (who.role === 'owner') {
+    if(game.visibility==='public'){
+      if(!await communityReady(db()))throw new GameError('Veřejné výpravy se připravují.',503);
+      if(input.action==='hide'){
+        const changed=await db().prepare("UPDATE patrac_expeditions SET payload=json_set(payload,'$.published',json('false')),version=version+1 WHERE code=? AND version=?").bind(code,row.version).run();if(!changed.meta.changes)throw new GameError('Výprava se mezitím změnila.',409);return json({ok:true});
+      }
+      await requirePublicAccess(db(),env,who.accountId);
+      if(input.action==='publish'){
+        validatePublicInfo(game.publicInfo);validateExpedition(game);if(game.mode!=='race')throw new GameError('Veřejná výprava musí být na čas.');
+        const changed=await db().prepare("UPDATE patrac_expeditions SET payload=json_set(payload,'$.published',json('true'),'$.status','running'),version=version+1 WHERE code=? AND version=?").bind(code,row.version).run();
+        if(!changed.meta.changes)throw new GameError('Výprava se mezitím změnila.',409);return json({ok:true});
+      }
+      if(input.action!=='save')throw new GameError('Veřejnou výpravu zahajuje každý hráč samostatně.');
+      if(input.version!==row.version)throw new GameError('Výprava se mezitím změnila. Obnovte ji.',409);
+      if(await db().prepare('SELECT id FROM patrac_public_attempts WHERE code=? LIMIT 1').bind(code).first())throw new GameError('Po prvním zahájeném pokusu je veřejná trasa uzamčená kvůli férovému žebříčku.',409);
+      const validated=validateExpedition(input.game);if(validated.mode!=='race')throw new GameError('Veřejná výprava musí být na čas.');
+      const next=await storePhotos({...game,...validated,visibility:'public',publicInfo:validatePublicInfo(input.game.publicInfo)},code,game);
+      const changed=await db().prepare('UPDATE patrac_expeditions SET payload=?,version=version+1 WHERE code=? AND version=? AND NOT EXISTS(SELECT 1 FROM patrac_public_attempts WHERE code=?)').bind(JSON.stringify(next),code,row.version,code).run();
+      if(!changed.meta.changes){try{await removeReplacedPhotos(next,game,code,env.BUCKET);}catch{}throw new GameError('Mezitím někdo zahájil pokus nebo změnil trasu. Obnovte výpravu.',409);}
+      try{await removeReplacedPhotos(game,next,code,env.BUCKET);}catch{}return json({ok:true});
+    }
     await requirePaidAccess(env, who.accountId);
     if (game.status !== 'waiting') throw new GameError('Pravidla a trasu po startu nelze měnit.', 409);
     let next;

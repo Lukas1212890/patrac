@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./patrac.css";
+import "./community.css";
 export const metadata: Metadata = {
  title: "Pátrač — dobrodružství ze světa Stopíka",
  description: "Týmové GPS výpravy za pokladem, hádanky a šifry pro děti i dospělé.",

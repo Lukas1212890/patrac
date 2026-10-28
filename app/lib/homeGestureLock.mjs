@@ -7,7 +7,7 @@ export function installHomeGestureLock(scope) {
   function preventBackgroundPan(event) {
     if (!event.cancelable || event.touches?.length > 1) return;
     // Dialogs have their own bounded scroll area for many saved games / help text.
-    if (event.target?.closest?.('.p-modal')) return;
+    if (event.target?.closest?.('.p-modal,[data-patrac-pan]')) return;
     event.preventDefault();
   }
   doc.addEventListener('touchmove', preventBackgroundPan, { passive: false });

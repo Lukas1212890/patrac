@@ -80,3 +80,19 @@ Tvůrce má nejvýše 3 uložené výpravy. Zůstávají funkční i po dohrán�
 „Smazat celou výpravu“ v přehledu autora vyžaduje opsání kódu a skutečné vlastnictví ověřené účtem. Je dostupné i po vypršení placeného přístupu. Nejprve se výprava uzamkne pro mazání, potom se odstraní všechny fotografie pod jejím vlastním prefixem R2 (včetně starých nepoužitých), nakonec se transakčně odstraní týmy, výsledky a samotná výprava. Při selhání R2 zůstane označená výprava s vlastnictvím pro opakování úklidu; slot se uvolní až po dokončení. Nevyžaduje se nová databázová migrace. Žádné existující produkční výpravy se při nasazení nemažou.
 
 Nový tým se může připojit i k již spuštěné či dohrané výpravě. Dostane vlastní `startedAt`, podle kterého se počítá jeho čas i přesun na první stanoviště. Původní týmy a výsledky zůstávají. Na prvním společném startu se dál odstartují současně všechny čekající týmy; limit 30 se vztahuje na právě nedohrané týmy. Odehrání výpravy nikdy nemění její stav na nepřístupný ani ji neodstraňuje.
+
+## Komunitní mapa a veřejné pokusy
+
+Úvodní obrazovka zobrazuje mapu veřejných výprav, s navigací Mapa / Moje hraní / Tvořit / Profil. Nabídku, první stanoviště a TOP 10 lze prohlížet bez placeného účtu. Zahájení i pokračování ve veřejném hraní vyžaduje platnou ověřenou relaci a aktivní přístup v aktuálním platebním prostředí. Registrace sama neuděluje bezplatný tarif. Soukromé týmy se nadále připojují kódem bez účtu.
+
+Nové kvóty jsou oddělené: 3 soukromé a 2 veřejné výpravy na tvůrce. Starší hry bez `visibility` jsou soukromé. Viditelnost je přiřazená při vytvoření a nelze ji změnit ukládáním jiného typu; tím se neobcházejí kvóty ani jednorázové pokusy. Soukromé a veřejné koncepty mají oddělené klíče v IndexedDB.
+
+Veřejná výprava je vždy `race`, s popisem, obtížností, přibližnou délkou a časem. Po vytvoření je skrytá a autor ji zveřejní v přehledu. Mapové dotazy vracejí jen výslovně vybrané veřejné informace a souřadnice první zastávky; žádné otázky, odpovědi, nápovědy, další souřadnice, e-maily či herní klíče. Dotaz může obsahovat `bounds=west,south,east,north`, vrací nejvýše 150 bodů a informaci o dalších výpravách.
+
+Před použitím v D1 `patra` jednou spustit `drizzle/0005_public_expeditions.sql`. Je idempotentní a nic nemaže. Obsahuje tabulku pokusů a mapové indexy. Před migrací mapa oznámí přípravu veřejných výprav a soukromé hry zůstávají dostupné. Žádný další tajný klíč ani nová služba není potřeba.
+
+Jedna kombinace účtu, veřejné výpravy a platebního prostředí má nejvýše jeden pokus díky unikátnímu omezení D1. Start se potvrzuje výslovně; opakování požadavku vrací stejný pokus a čas. Zavření aplikace, jiné zařízení, nová přezdívka ani znovuzveřejnění nedají nový pokus. Sandbox a ostré pokusy i žebříčky jsou oddělené. Autor do vlastní veřejné výpravy nezapisuje soutěžní pokus. Po prvním startu je trasa uzamčená a SQL zápis chrání i závod mezi úpravou a prvním hráčem. Skrytí z mapy zastaví nové starty, ale rozehrané pokusy zachová. Platnost předplatného se kontroluje i při pokračování; při vypršení lze po obnovení navázat, čas se neresetuje.
+
+Veřejná hra používá samostatné `/api/public/*` routy s účtem, ne sdílený týmový klíč. Starý soukromý join/answer/hint endpoint odmítá veřejné hry. TOP 10 obsahuje jen dokončené pokusy podle serverového času plus penalizací, přezdívku z profilu a dokončení. Jeden účet nezabírá více příček v jedné výpravě. Veškeré časování a postup ukládá D1 s kontrolou revizí. Profil dovoluje změnu přezdívky přes vlastní Better Auth relaci.
+
+Účetní admin, přihlášení, Stripe, SMTP a stávající soukromá navigace zůstávají ve stejných oddělených prostředcích Pátrače. Žádná data Stopaře se touto změnou neupravují. Automatické mazání výprav po dohrání není implementované ani zapnuté. Ruční smazání celé výpravy odstraní také její veřejné pokusy a související fotografie.

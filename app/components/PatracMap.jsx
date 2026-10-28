@@ -47,12 +47,13 @@ export default function PatracMap({ target, position, onPick, heading = null }) 
 }
 
 // Raster fallback retains a working map on devices without a WebGL context.
-export function RasterMap({ target, position, onPick, baseMap, navigation = false, heading = null, mapFull = false }) {
-  const [center, setCenter] = useState(target || { lat: 49.8, lng: 15.5 }), [zoom, setZoom] = useState(target ? 16 : 6), [width, setWidth] = useState(500);
+export function RasterMap({ target, position, onPick, baseMap, navigation = false, heading = null, mapFull = false, overview = false, points = [], onPointSelect, onBounds }) {
+  const [center, setCenter] = useState(target || { lat: 49.8, lng: 15.5 }), [zoom, setZoom] = useState(overview ? 6 : target ? 16 : 6), [width, setWidth] = useState(500);
   const [height, setHeight] = useState(320);
   const box = useRef(null), drag = useRef(null);
   useEffect(() => { const observer = new ResizeObserver(entries => { setWidth(entries[0].contentRect.width); setHeight(entries[0].contentRect.height); }); if (box.current) observer.observe(box.current); return () => observer.disconnect(); }, []);
-  useEffect(() => { if (target) setCenter(target); }, [target?.lat, target?.lng]);
+  useEffect(() => { if (target) { setCenter(target); if(overview)setZoom(11); } }, [target?.lat, target?.lng]);
+  useEffect(()=>{if(!overview||!onBounds)return;const c=project(center,zoom),sw=unproject(c.x-width/2,c.y+height/2,zoom),ne=unproject(c.x+width/2,c.y-height/2,zoom);onBounds([sw.lng,sw.lat,ne.lng,ne.lat]);},[overview,center.lat,center.lng,zoom,width,height,onBounds]);
   let viewZoom = zoom, viewCenter = center;
   const base = getBaseMapConfig(baseMap);
   if (navigation && target) {
@@ -81,7 +82,8 @@ export function RasterMap({ target, position, onPick, baseMap, navigation = fals
     onPointerUp={e => { const start = drag.current; drag.current = null; if (!start) return; const dx = e.clientX - start.x, dy = e.clientY - start.y; if (Math.hypot(dx, dy) > 6) setCenter(unproject(p.x - dx, p.y - dy, zoom)); else if (onPick) { const bounds = box.current.getBoundingClientRect(); onPick(unproject(origin.x + e.clientX - bounds.left, origin.y + e.clientY - bounds.top, zoom)); } }}>
     <div className="p-raster-content" style={{ position: 'absolute', inset: 0, transform: navigation ? `rotate(${-(heading || 0)}deg)` : undefined, transition: navigation ? 'transform .18s linear' : undefined }}>{tiles}
       {navigation && <svg className="p-raster-route" width={width} height={height} aria-label="Modrá spojnice k cíli a oranžová hledací oblast" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>{a && b && <line x1={a.x - origin.x} y1={a.y - origin.y} x2={b.x - origin.x} y2={b.y - origin.y} stroke="#1687ff" strokeWidth="6"/>}{b && <circle cx={b.x - origin.x} cy={b.y - origin.y} r={zoneRadius} fill="#ff9f0a" fillOpacity=".3" stroke="#ff9f0a" strokeWidth="2"/>}</svg>}
-      {!navigation && target && <div className="p-target-marker" style={pointStyle(target)}>✦</div>}{position && <div className={navigation ? 'p-stopik-user-dot' : 'p-user-marker'} style={pointStyle(position)}/>}
+      {points.map(point=><button type="button" className="p-community-pin" key={point.code} aria-label={'Otevřít výpravu '+point.name} style={{...pointStyle(point),pointerEvents:'auto'}} onClick={()=>onPointSelect?.(point.code)}>✦</button>)}
+      {!overview && !navigation && target && <div className="p-target-marker" style={pointStyle(target)}>✦</div>}{position && <div className={navigation ? 'p-stopik-user-dot' : 'p-user-marker'} style={pointStyle(position)}/>}
     </div>
     {!navigation && <div className="p-raster-controls"><button type="button" aria-label="Přiblížit mapu" onClick={() => setZoom(z => Math.min(base.maxzoom, z + 1))}>+</button><button type="button" aria-label="Oddálit mapu" onClick={() => setZoom(z => Math.max(2, z - 1))}>−</button><button type="button" aria-label="Zobrazit cíl" onClick={() => { if (target) setCenter(target); }}>◎</button></div>}
     <div className="p-raster-credit">{baseMap === 'map' ? 'Esri, HERE, Garmin, USGS, © OpenStreetMap, GIS User Community' : 'Esri, Maxar, GIS User Community'}</div>

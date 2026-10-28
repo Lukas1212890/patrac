@@ -3,6 +3,7 @@ import { allowedOrigin } from './origin.mjs';
 import { createExpedition, viewExpedition, changeExpedition, errorResponse } from './lib/patrac-server';
 import { adminRequest } from './admin';
 import { billingRequest } from './billing';
+import { publicRequest } from './public';
 import { accountAuth } from './auth';
 import * as account from './account';
 import * as config from './config';
@@ -19,7 +20,8 @@ export default {
     const path = new URL(request.url).pathname;
     let response: Response;
     try {
-      if (path === '/api/billing' || path.startsWith('/api/billing/')) response = await billingRequest(request);
+      if(path.startsWith('/api/public/')) response=await publicRequest(request);
+      else if (path === '/api/billing' || path.startsWith('/api/billing/')) response = await billingRequest(request);
       else if (path.startsWith('/api/admin/')) {
         if (request.method === 'POST' && !origin) return Response.json({error:'Chybí původ požadavku.'},{status:403,headers});
         response = await adminRequest(request);

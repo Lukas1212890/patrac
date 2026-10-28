@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {Miniflare} from 'miniflare';
+import {readFileSync} from 'node:fs';
+import {hashPassword} from 'better-auth/crypto';
+test('Worker community flow enforces real sessions, two public slots, one concurrent account attempt and locked routes',async()=>{
+ const built=await build({entryPoints:['worker/index.ts'],bundle:true,format:'esm',platform:'browser',external:['cloudflare:workers','node:*'],write:false,logLevel:'silent'});
+ const mf=new Miniflare({modules:[{type:'ESModule',path:process.cwd()+'/worker/public-worker-test.mjs',contents:built.outputFiles[0].text}],modulesRoot:process.cwd(),compatibilityDate:'2026-05-22',compatibilityFlags:['nodejs_compat'],cf:false,d1Databases:['DB'],r2Buckets:['BUCKET'],bindings:{PATRAC_AUTH_SECRET:'local-community-worker-key-not-for-production-8642',PATRAC_AUTH_BASE_URL:'http://localhost:8790',PATRAC_ALLOWED_ORIGINS:'http://localhost:3000',PATRAC_BILLING_ENABLED:'true',PATRAC_STRIPE_MODE:'test',PATRAC_REGISTRATION_READY:'false'}});
+ const request=(path,body,token)=>mf.dispatchFetch('http://localhost:8790'+path,{method:body?'POST':'GET',headers:{Origin:'http://localhost:3000','Content-Type':'application/json',...(token?{'X-Patrac-Account':token,...(path.startsWith('/api/auth/')?{Authorization:'Bearer '+token}:{})}:{})},...(body?{body:JSON.stringify(body)}:{})});
+ try{
+  const db=await mf.getD1Database('DB');for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0004_billing.sql'])for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
+  const before=await(await request('/api/public/expeditions')).json();assert.equal(before.ready,false);
+  for(const sql of readFileSync(new URL('../drizzle/0005_public_expeditions.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
+  const password='public-worker-fixture-password-long-8642',hash=await hashPassword(password),stamp=Date.now(),tokens={};
+  for(const id of ['author','player','unpaid']){
+   await db.prepare('INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,1,?,?)').bind(id,id,id+'@example.com',stamp,stamp).run();
+   await db.prepare("INSERT INTO patrac_auth_account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES(?,?,'credential',?,?,?,?)").bind(id,id,id,hash,stamp,stamp).run();
+   if(id!=='unpaid')await db.prepare("INSERT INTO patrac_access(user_id,environment,expires_at) VALUES(?,'test',?)").bind(id,stamp+86400000).run();
+   const login=await request('/api/auth/sign-in/email',{email:id+'@example.com',password});assert.equal(login.status,200);tokens[id]=login.headers.get('set-auth-token');
+  }
+  const station={name:'Start',lat:49.3,lng:17.39,radius:25,question:'Secret one',answer:'first',hints:[{type:'text',content:'Secret hint',minutes:2}]};
+  const game={name:'Veřejná výprava',mode:'race',visibility:'public',publicInfo:{description:'Výprava pro všechny předplatitele do přírody.',difficulty:'easy',distanceKm:1,estimatedMinutes:30},stations:[station,{...station,name:'Druhá zastávka',lat:49.301,lng:17.391,answer:'last'}]};
+  const create=await request('/api/expeditions',game,tokens.author);assert.equal(create.status,201,await create.clone().text());const {code}=await create.json();
+  assert.equal((await request('/api/expeditions',game,tokens.unpaid)).status,402);
+  assert.equal((await request('/api/expeditions',game,tokens.author)).status,201);assert.equal((await request('/api/expeditions',game,tokens.author)).status,409);
+  for(let i=0;i<3;i++)assert.equal((await request('/api/expeditions',{...game,visibility:'private'},tokens.author)).status,201);
+  const profile=await(await request('/api/account',null,tokens.author)).json();assert.equal(profile.expeditionCount,3);assert.equal(profile.publicExpeditionCount,2);
+  assert.equal((await(await request('/api/public/expeditions')).json()).expeditions.length,0);
+  assert.equal((await request('/api/expeditions/'+code,{action:'publish'},tokens.player)).status,403);
+  assert.equal((await request('/api/expeditions/'+code,{action:'publish'},tokens.author)).status,200);
+  const listing=await(await request('/api/public/expeditions')).json();assert.equal(listing.expeditions.length,1);assert.equal(JSON.stringify(listing).includes('first'),false);assert.equal(JSON.stringify(listing).includes('49.301'),false);
+  assert.equal((await request('/api/public/expeditions/'+code+'/start',{confirm:true})).status,401);
+  assert.equal((await request('/api/public/expeditions/'+code+'/start',{confirm:true},tokens.unpaid)).status,402);
+  assert.equal((await request('/api/public/expeditions/'+code+'/start',{confirm:true},tokens.author)).status,403);
+  assert.equal((await request('/api/expeditions/'+code,{action:'join',name:'Bypass',teamToken:'a'.repeat(64)})).status,403);
+  const starts=await Promise.all([request('/api/public/expeditions/'+code+'/start',{confirm:true,userId:'unpaid'},tokens.player),request('/api/public/expeditions/'+code+'/start',{confirm:true},tokens.player)]);
+  for(const response of starts)assert.equal(response.status,200,await response.clone().text());
+  const first=await starts[0].json(),second=await starts[1].json();assert.equal(first.attempt.id,second.attempt.id);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_public_attempts').first()).n,1);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_teams WHERE code=?').bind(code).first()).n,1);
+  const owner=await(await request('/api/expeditions/'+code,null,tokens.author)).json();assert.equal(owner.publicLocked,true);
+  assert.equal((await request('/api/expeditions/'+code,{action:'save',game,version:owner.version},tokens.author)).status,409);
+  const play=await(await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).json();assert.equal(play.team.station.question,undefined);assert.equal(play.game.startedAt,first.attempt.startedAt);assert.equal(JSON.stringify(play).includes('"last"'),false);
+  assert.equal((await request('/api/public/expeditions/'+code+'/play',{action:'answer',index:0,answer:'first'},tokens.player)).status,403);
+  const arrive=await request('/api/public/expeditions/'+code+'/play',{action:'arrive',index:0,position:{lat:49.3,lng:17.39,acc:5,timestamp:Date.now()}},tokens.player);assert.equal(arrive.status,200,await arrive.clone().text());
+  const riddle=await(await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).json();assert.equal(riddle.team.station.question,'Secret one');assert.equal(riddle.team.station.hints[0].content,undefined);
+  assert.equal((await request('/api/auth/update-user',{name:'New nickname'},tokens.player)).status,200);
+  const repeated=await(await request('/api/public/expeditions/'+code+'/start',{confirm:true},tokens.player)).json();assert.equal(repeated.attempt.id,first.attempt.id);assert.equal(repeated.attempt.startedAt,first.attempt.startedAt);
+  assert.equal((await request('/api/expeditions/'+code,{action:'hide'},tokens.author)).status,200);assert.equal((await(await request('/api/public/expeditions')).json()).expeditions.length,0);assert.equal((await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).status,200);
+  assert.equal((await(await request('/api/public/attempts',null,tokens.unpaid)).json()).attempts.length,0);
+  const finalOwner=await(await request('/api/expeditions/'+code,null,tokens.author)).json();
+  assert.equal((await request('/api/expeditions/'+code,{action:'delete',version:finalOwner.version,confirmation:code},tokens.author)).status,200);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_public_attempts').first()).n,0);
+  assert.equal((await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).status,404);
+ }finally{await mf.dispose();}
+});
