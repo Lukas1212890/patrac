@@ -20,6 +20,7 @@
   "vars": {
     "PATRAC_AUTH_URL": "https://ngkwalqrywdytiieqemz.supabase.co",
     "PATRAC_REGISTRATION_READY": "false",
-    "PATRAC_ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000"
+    "PATRAC_ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,https://patrac-lukasbednariks-3292s-projects.vercel.app,https://patrac.stopik.cz",
+    "PATRAC_AUTH_PUBLISHABLE_KEY": "sb_publishable_9fXeTsOsQjWLv4oy5Diy6Q_EPyVjUAc"
   }
 }
