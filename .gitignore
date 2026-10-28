@@ -43,3 +43,6 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+# Nested Worker local runtime state
+**/.wrangler/

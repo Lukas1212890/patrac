@@ -1,24 +1,32 @@
 # Pátrač
 
-Samostatná aplikace: Next.js na Vercelu, herní API v Cloudflare Workers, vlastní D1 a R2, Supabase pouze pro přihlášení tvůrců. Stopař se nemění.
+Samostatná hra: GitHub, Next.js/Vercel, Cloudflare Workers/D1/R2 a SMTP ACTIVE24. Účty tvůrců zajišťuje Better Auth přímo v našem API a D1. Žádná hostovaná autentizační služba. Stopař zůstává oddělený.
 
-## Ověření
+## Aktuální provoz
 
-Node 22+, `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run worker:check`, `npm run build`.
+Frontend: `https://patrac-lukasbednariks-3292s-projects.vercel.app`
+API: `https://patrac-api.bednarik.workers.dev`
+D1: `patra`, ID `2854f53b-4640-4aad-8089-343f5b954a97`, binding `DB`.
+R2: `patrac-photos`, binding `BUCKET`.
 
-## Nasazení (dosud nedokončeno)
+## Vlastní účty – dokončení konfigurace
 
-1. Založit nový soukromý repozitář `patrac` v GitHub účtu Lukas1212890. Tento adresář je připravený zdroj, bez přihlašovacích údajů.
-2. V Cloudflare vytvořit NOVOU D1 `patrac` a R2 `patrac-photos`. Doplnit skutečné ID databáze do `worker/wrangler.jsonc`. Nepoužívat žádné vazby Stopaře.
-3. Před přechodem exportovat dosavadní produkční herní data a všechny fotografie ze Sites. Importovat původní kódy, hashe klíčů, payloady i verze; ověřit počty a obsah. Pak doplnit migraci `0001`. Lokální testovací databáze není produkční záloha.
-4. Worker: nastavit veřejný Supabase publishable key `PATRAC_AUTH_PUBLISHABLE_KEY`. Auth URL je již vlastní projekt Pátrače. `PATRAC_ALLOWED_ORIGINS` obsahuje jen přesné adresy vlastního frontendu oddělené čárkou. Žádný wildcard pro všechny Vercel projekty. `npm run worker:deploy` až po doplnění vazeb a importu dat.
-5. Založit samostatný Vercel projekt propojený jen s novým repozitářem. Nastavit `NEXT_PUBLIC_PATRAC_API_URL` na jeho Cloudflare Worker HTTPS URL. Build `npm run build`. Frontend posílá fotky přímo do API, nepodléhá limitu těla Vercel Functions. Odpovědi s herními daty se necachují.
-6. Doplnit přesnou produkční Vercel adresu do origin allowlistu Workeru. Otestovat hráče, autorizaci tvůrce, fotografie, obnovení relace, příjezd a nápovědy.
-7. SMTP Supabase není hotové. Ověřit odesílání `patrac@stopik.cz` a potvrzení registrace/reset hesla; teprve potom `PATRAC_REGISTRATION_READY=true`. Supabase Site URL a redirect allowlist nastavit na nový frontend.
-8. Až po ověření připojit `patrac.stopik.cz` k NOVÉMU Vercel projektu a použít DNS z Vercelu. Starý navržený CNAME `custom-domains.chatgpt.site` nepoužívat. Nepřepisovat apex, MX ani Stopaře. Přidat novou doménu do Cloudflare originů i Supabase redirectů.
+Tato změna vyžaduje konfiguraci před aktivací registrace:
 
-Přístupové klíče týmů a uložené rozehrané hry jsou v localStorage původního originu. Přechod na jinou adresu je automaticky nepřenese: před přesměrováním připravit export/import přístupů nebo obnovu kódem a uloženým klíčem. Starou verzi ponechat dostupnou do ověření přenosu. PWA bude na nové adrese nutné znovu nainstalovat.
+1. Do D1 `patra` přidat tabulky z `drizzle/0002_creator_auth.sql` (idempotentní SQL). Existující herní tabulky ani výpravy nemazat. Nevkládat nic do databází Stopaře.
+2. Vytvořit náhodný tajný klíč alespoň 32 bajtů. Nastavit stejnou hodnotu jako `PATRAC_AUTH_SECRET` v Cloudflare Worker Secrets a Vercel Environment Variables. Nikdy jej nevkládat do zdrojů, logů ani chatu. Slouží pro podpis relací i ověření požadavků na e-maily; jeho změna odhlásí uživatele.
+3. Pouze ve Vercelu nastavit `PATRAC_SMTP_PASSWORD` na heslo existující schránky `stopar@stopik.cz`. Server `smtp.websupport.cz`, port 465/TLS, uživatel `stopar@stopik.cz`, odesílatel `Pátrač <patrac@stopik.cz>`. Alias potvrdil vlastník. Neměnit heslo schránky ani konfiguraci Stopaře.
+4. SMTP endpoint musí být dosažitelný z Workeru. Na stávající `.vercel.app` adrese ho může blokovat Vercel Deployment Protection. Ověřit připojení finální `patrac.stopik.cz` ke správnému projektu (ochrana vlastních domén je nyní vypnutá) a pak změnit `PATRAC_MAIL_RELAY_URL` v konfiguraci Workeru na `https://patrac.stopik.cz/api/internal/account-mail`. Alternativou je samostatný, úzce vymezený přístup přes Deployment Protection, nikdy vypnutí ochrany cizích projektů.
+5. Nasadit frontend i Worker. `PATRAC_ALLOWED_ORIGINS` má jen přesné adresy vlastního frontendu, žádný wildcard všech Vercel projektů. `PATRAC_AUTH_BASE_URL` zůstává Worker URL.
+6. Po konfiguraci SMTP a schématu zapnout `PATRAC_REGISTRATION_READY=true` v `worker/wrangler.jsonc` a nasadit. Potom ověřit doručení potvrzení, registraci, potvrzení odkazu, přihlášení, odhlášení, změnu hesla a obnovu hesla s reálnou schránkou vlastníka. Teprve poté otevírat hru veřejnosti. Potvrzení e-mailu se neobchází.
 
-## Co již prošlo
+Po změně hesla pomocí obnovy se zneplatní všechny předchozí relace. Změna hesla v profilu vyžaduje současné heslo. Přihlášení a e-mailové požadavky mají limity uložené v D1. Účet je povinný jen pro tvůrce; týmové přístupy dál fungují vlastním klíčem.
 
-36 automatických testů; TypeScript frontendu i Workeru; produkční Next.js build. Zatím neproběhlo skutečné nasazení, přenos produkčních dat ani ověření e-mailových účtů.
+## Přenos starých výprav
+
+Starou verzi Sites zachovat do ověřeného exportu/importu produkční D1 a R2 a přenosu přístupů. Lokální QA databáze není produkční záloha. Uložené týmové klíče i rozehrané hry patří konkrétnímu originu v localStorage, nová doména je automaticky nepřenese. PWA na nové doméně vyžaduje novou instalaci. Žádné zdroje či účty dřívější autentizační služby se touto změnou nemažou.
+
+## Kontroly
+
+Node 22, `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run build`, `npm run worker:check`.
+`worker:check` nyní ověřuje i skutečné zabalení všech závislostí Workeru, ne jen TypeScript. Integrační testy účtů používají tentýž serverový modul nad dočasnou SQLite databází; e-maily v testech zachytí paměťová náhrada, nikomu se neposílají. Doručování přes skutečné SMTP čeká na konfiguraci.

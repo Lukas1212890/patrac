@@ -4,6 +4,7 @@ export const metadata: Metadata = {
  title: "Pátrač — dobrodružství ze světa Stopíka",
  description: "Týmové GPS výpravy za pokladem, hádanky a šifry pro děti i dospělé.",
  manifest: "/manifest.webmanifest",
+ referrer: "no-referrer",
  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Pátrač" },
  icons: { icon: "/favicon.svg", apple: "/patrac-icon-192.png" }
 };

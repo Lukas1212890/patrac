@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { allowedOrigin } from './origin.mjs';
 import { createExpedition, viewExpedition, changeExpedition, errorResponse } from './lib/patrac-server';
+import { accountAuth } from './auth';
 import * as account from './account';
 import * as config from './config';
 export default {
@@ -11,11 +12,17 @@ export default {
     if (origin) headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Patrac-Account');
+    headers.set('Access-Control-Expose-Headers', 'set-auth-token');
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     const path = new URL(request.url).pathname;
     let response: Response;
     try {
-      if (path === '/api/account/config' && request.method === 'GET') response = await config.GET();
+      if (path.startsWith('/api/auth/')) {
+        if (request.method === 'POST' && !origin) return Response.json({ error: 'Chybí původ požadavku.' }, { status: 403, headers });
+        if (env.PATRAC_REGISTRATION_READY !== 'true' && ['/api/auth/sign-up/email', '/api/auth/request-password-reset', '/api/auth/send-verification-email'].includes(path)) return Response.json({ message: 'Odesílání e-mailů se připravuje.' }, { status: 503, headers });
+        response = await accountAuth().handler(request);
+      }
+      else if (path === '/api/account/config' && request.method === 'GET') response = await config.GET();
       else if (path === '/api/account' && request.method === 'GET') response = await account.GET(request);
       else if (path === '/api/account' && request.method === 'POST') response = await account.POST(request);
       else if (path === '/api/expeditions' && request.method === 'POST') response = await createExpedition(request);
