@@ -4,6 +4,7 @@ import { ArrowLeft, UserRound, LogOut, Flag, ChevronRight, RefreshCw, KeyRound }
 import { creatorClient, creatorRequest, clearAccount, notifyAccount } from '../lib/creator-client';
 function authMessage(error) {
   const code = error?.code?.toLowerCase();
+  if (typeof code === 'string' && /^(smtp_|mail_|relay_)/.test(code)) return 'E-mail se nepodařilo odeslat. Kód: ' + code.toUpperCase() + '.';
   if (['invalid_credentials', 'invalid_email_or_password', 'invalid_password'].includes(code)) return 'E-mail nebo heslo nesouhlasí.';
   if (['email_not_confirmed', 'email_not_verified'].includes(code)) return 'Nejprve ověřte e-mail pomocí odkazu ve zprávě.';
   if (['over_email_send_rate_limit', 'over_request_rate_limit'].includes(code)) return 'Příliš mnoho pokusů. Počkejte chvíli a zkuste to znovu.';

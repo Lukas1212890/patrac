@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { APIError } from 'better-auth/api';
 import { getMigrations } from 'better-auth/db/migration';
 import { createAccountAuth } from '../worker/lib/accountAuth.mjs';
 const origin = 'http://localhost:3000', base = 'http://localhost:8790';
-async function fixture() {
+async function fixture(mailFailure = false) {
   const db = new DatabaseSync(':memory:'), mail = [];
-  const auth = createAccountAuth({ DB: db, PATRAC_AUTH_SECRET: 'test-secret-with-more-than-thirty-two-characters', PATRAC_AUTH_BASE_URL: base, PATRAC_ALLOWED_ORIGINS: origin, sendMail: async (to, subject, text) => mail.push({ to, subject, text }) });
+  const auth = createAccountAuth({ DB: db, PATRAC_AUTH_SECRET: 'test-secret-with-more-than-thirty-two-characters', PATRAC_AUTH_BASE_URL: base, PATRAC_ALLOWED_ORIGINS: origin, sendMail: async (to, subject, text) => { if (mailFailure) throw new APIError('SERVICE_UNAVAILABLE', { message: 'Mail failed', code: 'MAIL_SIGNATURE_INVALID' }); mail.push({ to, subject, text }); } });
   await (await getMigrations(auth.options)).runMigrations();
   const request = (path, body, token, extra = {}) => auth.handler(new Request(base + '/api/auth/' + path, { method: body ? 'POST' : 'GET', headers: { Origin: origin, 'Content-Type': 'application/json', 'CF-Connecting-IP': '192.0.2.1', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...extra }, ...(body ? { body: JSON.stringify(body) } : {}) }));
   return { auth, db, mail, request };
@@ -58,4 +59,13 @@ test('password changes require the old password; arbitrary callback origins and 
   assert.equal((await f.request('sign-in/email', { email: 'tester@example.com', password }, null, { Origin: 'https://evil.example' })).status, 403);
   let response; for(let i=0;i<8;i++) response = await f.request('sign-in/email', { email: 'tester@example.com', password: 'wrong' });
   assert.equal(response.status, 429); f.db.close();
+});
+
+test('safe delivery error code reaches the browser without credentials or message contents', async () => {
+  const f = await fixture(true);
+  await f.request('sign-up/email', { email: 'tester@example.com', password, name: 'Test', callbackURL: origin });
+  const r = await f.request('send-verification-email', { email: 'tester@example.com', callbackURL: origin });
+  assert.equal(r.status, 503);
+  const body = await r.json(); assert.equal(body.code, 'MAIL_SIGNATURE_INVALID'); assert.equal(JSON.stringify(body).includes(password), false);
+  f.db.close();
 });
