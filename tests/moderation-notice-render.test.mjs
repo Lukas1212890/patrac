@@ -8,7 +8,7 @@ const require=createRequire(import.meta.url);
 test('creator notice and admin preview render the actual reason as safe text; deletion starts disabled',async()=>{
  const built=await build({stdin:{contents:"export {default as Card} from './CreatorNoticeCard.jsx';export {default as Dialog} from './AdminDeleteExpedition.jsx';",resolveDir:process.cwd()+'/app/components',loader:'jsx'},bundle:true,platform:'node',format:'cjs',packages:'external',jsx:'automatic',write:false,logLevel:'silent'});
  const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(require,mod,mod.exports);
- const notice={name:'Lesní výprava',code:'ABCDEFG',reason:'Uzavřený pozemek <script>alert(1)</script>',createdAt:Date.now(),actorEmail:'private-admin@example.com'};
+ const notice={type:'delete-expedition',name:'Lesní výprava',code:'ABCDEFG',reason:'Uzavřený pozemek <script>alert(1)</script>',createdAt:Date.now(),actorEmail:'private-admin@example.com'};
  const html=renderToStaticMarkup(createElement(mod.exports.Card,{notice}));assert.ok(html.includes('Výpravu odstranil správce'));assert.ok(html.includes('Lesní výprava'));assert.ok(html.includes('Důvod:'));assert.ok(html.includes('&lt;script&gt;'));assert.equal(html.includes('<script>'),false);assert.equal(html.includes('private-admin@example.com'),false);
  const dialog=renderToStaticMarkup(createElement(mod.exports.Dialog,{game:{...notice,version:0,deletion:{reason:notice.reason,requestKey:'test-render-request-key'}},userId:'creator',busy:false,onChange(){},onClose(){}}));assert.ok(dialog.includes('Takto oznámení uvidí tvůrce:'));assert.ok(dialog.includes('Uzavřený pozemek &lt;script&gt;'));assert.ok(dialog.includes('disabled=""'));assert.ok(dialog.includes('Pro potvrzení opište kód'));assert.equal(dialog.includes('<script>'),false);
 });
@@ -20,4 +20,16 @@ test('account profile renders reward, access and quota notices with historical v
  const html=renderToStaticMarkup(createElement(mod.exports.ProfileNotices,{notices}));for(const text of ['Oznámení','200','měsíce zdarma','Správce prodloužil váš přístup','3 → 5','2 → 4','&lt;script&gt;'])assert.ok(html.includes(text),text);assert.equal(html.includes('<script>'),false);
  const empty=renderToStaticMarkup(createElement(mod.exports.ProfileNotices,{}));assert.ok(empty.includes('Zatím nemáte žádná oznámení.'));
  const failed=renderToStaticMarkup(createElement(mod.exports.ProfileNotices,{error:'Nelze načíst'}));assert.ok(failed.includes('role="alert"'));assert.equal(failed.includes('Zatím nemáte'),false);
+});
+
+test('lowering private/public quotas from 20/30 to 3/2 never renders a deletion message; every event keeps its own type',async()=>{
+ const built=await build({stdin:{contents:"export {default as Card} from './CreatorNoticeCard.jsx';",resolveDir:process.cwd()+'/app/components',loader:'jsx'},bundle:true,platform:'node',format:'cjs',packages:'external',jsx:'automatic',write:false,logLevel:'silent'});
+ const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(require,mod,mod.exports);
+ const render=notice=>renderToStaticMarkup(createElement(mod.exports.Card,{notice}));
+ const lowered=render({type:'limits',oldPrivateLimit:20,privateLimit:3,oldPublicLimit:30,publicLimit:2});
+ for(const text of ['Správce snížil vaše limity výprav','20 → 3','30 → 2'])assert.ok(lowered.includes(text));
+ for(const text of ['Výpravu odstranil správce','Důvod:','Kód'])assert.equal(lowered.includes(text),false);
+ assert.ok(render({type:'limits',oldPrivateLimit:3,privateLimit:20,oldPublicLimit:2,publicLimit:30}).includes('Správce navýšil vaše limity výprav'));
+ for(const notice of [{},{type:'future-event'},{type:'access',months:3,expiresAt:1799999999999},{type:'reward',months:2,milestone:100,expiresAt:1799999999999}])assert.equal(render(notice).includes('Výpravu odstranil správce'),false);
+ const oneChange=render({type:'limits',oldPrivateLimit:20,privateLimit:3,oldPublicLimit:2,publicLimit:2});assert.equal(oneChange.includes('Veřejné výpravy:'),false);
 });

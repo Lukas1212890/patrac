@@ -47,4 +47,10 @@ export async function POST(request: Request) {
   } catch (e) { return errorResponse(e); }
 }
 
-export async function notices(request:Request){const who=await creatorIdentity(request,true);return json(await creatorNotices(env.DB,who!.id,billingEnvironment(env)));}
+export async function notices(request:Request){
+ const who=await creatorIdentity(request,true);
+ const result=await creatorNotices(env.DB,who!.id,billingEnvironment(env));
+ // Older open clients render every event as deletion. Never send them other event types.
+ const typed=new URL(request.url).searchParams.get('format')==='2';
+ return json({format:typed?2:1,notices:typed?result.notices:result.notices.filter(n=>n.type==='delete-expedition')});
+}
