@@ -1,1 +1,1 @@
-declare namespace Cloudflare { interface Env { DB: D1Database; BUCKET: R2Bucket; PATRAC_AUTH_URL: string; PATRAC_AUTH_PUBLISHABLE_KEY: string; PATRAC_REGISTRATION_READY: string; PATRAC_ALLOWED_ORIGINS: string; } }
+declare namespace Cloudflare { interface Env { DB: D1Database; BUCKET: R2Bucket; PATRAC_AUTH_SECRET: string; PATRAC_AUTH_BASE_URL: string; PATRAC_MAIL_RELAY_URL: string; PATRAC_REGISTRATION_READY: string; PATRAC_ALLOWED_ORIGINS: string; } }

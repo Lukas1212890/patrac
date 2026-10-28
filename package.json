@@ -10,20 +10,22 @@
     "build": "next build --webpack",
     "start": "next start --hostname 0.0.0.0",
     "test": "node --test tests-engine.mjs tests/*.test.mjs",
-    "worker:check": "tsc -p worker/tsconfig.json",
+    "worker:check": "sh scripts/check-worker.sh",
     "worker:dev": "wrangler dev --config worker/wrangler.jsonc",
     "worker:deploy": "wrangler deploy --config worker/wrangler.jsonc"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.118.0",
+    "better-auth": "1.7.14",
     "lucide-react": "^1.31.0",
     "next": "16.3.4",
+    "nodemailer": "10.2.1",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "4.20260515.1",
     "@types/node": "22.19.19",
+    "@types/nodemailer": "7.0.11",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "typescript": "5.9.3",
