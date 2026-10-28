@@ -44,3 +44,15 @@ test('red badges show the same unread count in profile and notices; read history
  const read=render(mod.exports.Notices,{notices,unreadNotices:[],unreadCount:0});assert.equal(read.includes('p-notice-count'),false);assert.equal(read.includes('Označit jako přečtené'),false);assert.ok(read.includes('Správce prodloužil váš přístup'));
  assert.equal(render(mod.exports.Badge,{count:0}),'');assert.equal(render(mod.exports.Banner,{notices:[]}), '');
 });
+
+test('review notices and single creator replies render safe text and correct actions without a chat thread',async()=>{
+ const built=await build({stdin:{contents:"export {default as Card} from './CreatorNoticeCard.jsx';export {default as Reviews} from './ExpeditionReviews.jsx';",resolveDir:process.cwd()+'/app/components',loader:'jsx'},bundle:true,platform:'node',format:'cjs',packages:'external',jsx:'automatic',write:false,logLevel:'silent'});
+ const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(require,mod,mod.exports);
+ for(const type of ['review','review-reply']){
+  const html=renderToStaticMarkup(createElement(mod.exports.Card,{notice:{id:'x',type,name:'Les',code:'ABCDEFG',nickname:'Pavel',stars:5,comment:'<script>text</script>',reply:'Děkuji',createdAt:Date.now()}}));
+  assert.equal(html.includes('Výpravu odstranil správce'),false);assert.equal(html.includes('<script>'),false);assert.ok(html.includes(type==='review'?'Nový komentář a hodnocení':'Tvůrce odpověděl'));
+ }
+ const reviews={ready:true,repliesReady:true,count:1,average:5,canReview:false,items:[{reviewKey:'a',nickname:'Pavel',stars:5,comment:'Pěkná cesta',reply:'<b>Děkuji</b>',replyVersion:1,createdAt:Date.now(),updatedAt:Date.now()}]};
+ const owner=renderToStaticMarkup(createElement(mod.exports.Reviews,{code:'ABCDEFG',reviews,isAuthor:true,user:{id:'owner'}}));assert.ok(owner.includes('Upravit odpověď'));assert.ok(owner.includes('Odpověď tvůrce'));assert.ok(owner.includes('&lt;b&gt;'));
+ const visitor=renderToStaticMarkup(createElement(mod.exports.Reviews,{code:'ABCDEFG',reviews,isAuthor:false,user:{id:'player'}}));assert.ok(visitor.includes('Odpověď tvůrce'));assert.equal(visitor.includes('Upravit odpověď'),false);assert.equal(visitor.includes('Odpovědět na komentář'),false);
+});

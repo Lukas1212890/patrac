@@ -16,7 +16,7 @@ export async function publicRequest(request:Request){
  if(!match)return Response.json({error:'Nenalezeno.'},{status:404});
  const code=match[1].toUpperCase(),action=match[2];
  if(!action&&request.method==='GET')return Response.json(await api.detail(code,user));
- if(action==='reviews'&&request.method==='GET')return Response.json(await reviews.list(code,url.searchParams.get('offset')));
+ if(action==='reviews'&&request.method==='GET')return Response.json(url.searchParams.get('manage')==='1'?await reviews.manage(code,user):await reviews.list(code,url.searchParams.get('offset'),user));
  if(action==='play'&&request.method==='GET')return Response.json(await api.play(code,user,undefined));
  if(request.method==='POST'){
   if(!request.headers.get('origin'))throw new GameError('Chybí původ požadavku.',403);

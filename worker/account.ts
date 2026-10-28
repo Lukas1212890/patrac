@@ -14,9 +14,11 @@ export async function GET(request: Request) {
   try {
     const who = await creatorIdentity(request, true);
     const rows = await env.DB!.prepare('SELECT e.code, e.payload FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code = e.code WHERE c.creator_id = ? ORDER BY c.linked_at DESC').bind(who!.id).all<any>();
+    const ratings=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_public_reviews'").first()?await env.DB.prepare("SELECT r.code,COUNT(*) AS count,ROUND(AVG(r.stars),1) AS average,SUM(CASE WHEN length(trim(r.comment))>0 THEN 1 ELSE 0 END) AS comments FROM patrac_public_reviews r JOIN patrac_creator_games c ON c.code=r.code WHERE c.creator_id=? AND r.environment=? GROUP BY r.code").bind(who!.id,billingEnvironment(env)).all<any>():{results:[]};
+    const byCode=new Map(ratings.results.map(r=>[r.code,{count:r.count,average:r.average,comments:r.comments}]));
     const limits=await creatorLimits(env.DB,who!.id);
     const played=await env.DB!.prepare("SELECT e.code,e.payload,t.payload AS player FROM patrac_teams t JOIN patrac_expeditions e ON e.code=t.code WHERE t.user_id=? AND COALESCE(json_extract(e.payload,'$.visibility'),'private')='private' ORDER BY t.rowid DESC").bind(who!.id).all<any>();
-    return json({privateGames:played.results.map(r=>({role:'team',code:r.code,name:who!.nickname,gameName:JSON.parse(r.payload).name,finishedAt:JSON.parse(r.player).finishedAt,abandonedAt:JSON.parse(r.player).abandonedAt,userId:who!.id})), user: who, expeditionLimit:limits.private, expeditionCount:rows.results.filter(r=>JSON.parse(r.payload).visibility!=='public').length, publicExpeditionLimit:limits.public, publicExpeditionCount:rows.results.filter(r=>JSON.parse(r.payload).visibility==='public').length, games: rows.results.map(r => { const game = JSON.parse(r.payload); return { code: r.code, name: game.name, role: 'owner', status: game.status, visibility:game.visibility||'private', published:!!game.published, totalStations: game.stations.length }; }) });
+    return json({privateGames:played.results.map(r=>({role:'team',code:r.code,name:who!.nickname,gameName:JSON.parse(r.payload).name,finishedAt:JSON.parse(r.player).finishedAt,abandonedAt:JSON.parse(r.player).abandonedAt,userId:who!.id})), user: who, expeditionLimit:limits.private, expeditionCount:rows.results.filter(r=>JSON.parse(r.payload).visibility!=='public').length, publicExpeditionLimit:limits.public, publicExpeditionCount:rows.results.filter(r=>JSON.parse(r.payload).visibility==='public').length, games: rows.results.map(r => { const game = JSON.parse(r.payload); return { code: r.code, name: game.name, role: 'owner', status: game.status, visibility:game.visibility||'private', rating:byCode.get(r.code)||{count:0,average:null,comments:0}, published:!!game.published, totalStations: game.stations.length }; }) });
   } catch (e) { return errorResponse(e); }
 }
 export async function POST(request: Request) {
@@ -51,6 +53,6 @@ export async function notices(request:Request){
  const who=await creatorIdentity(request,true);
  const result=await creatorNotices(env.DB,who!.id,billingEnvironment(env));
  // Older open clients render every event as deletion. Never send them other event types.
- const typed=new URL(request.url).searchParams.get('format')==='2';
- return json({format:typed?2:1,notices:typed?result.notices:result.notices.filter(n=>n.type==='delete-expedition')});
+ const format=new URL(request.url).searchParams.get('format');
+ return json({format:format==='3'?3:format==='2'?2:1,notices:format==='3'?result.notices:format==='2'?result.notices.filter(n=>!['review','review-reply'].includes(n.type)):result.notices.filter(n=>n.type==='delete-expedition')});
 }

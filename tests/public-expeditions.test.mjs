@@ -214,3 +214,53 @@ test('map completion and abandonment belong only to the requesting account and b
  for(const text of ['alice','bob','user_id','secret answer','abandonedAt','finishedAt'])assert.equal(safe.includes(text),false,text);
  }finally{f.native.close();}
 });
+
+test('review/reply notifications are atomic, recipient-scoped, idempotent, and limited to one creator response',async()=>{
+ const f=fixture();try{
+ f.native.exec(readFileSync(new URL('../drizzle/0010_review_replies.sql',import.meta.url),'utf8'));
+ // Applying again must preserve all data and avoid duplicate triggers.
+ f.native.exec(readFileSync(new URL('../drizzle/0010_review_replies.sql',import.meta.url),'utf8'));
+ await f.add('ABCDEFG');
+ for(const user of [f.users.alice,f.users.bob]){
+  await f.api.start('ABCDEFG',user,true);
+  for(const [index,lat,lng,answer] of [[0,49.3,17.39,'secret answer'],[1,49.301,17.391,'finish answer']]){
+   await f.api.play('ABCDEFG',user,{action:'arrive',index,position:{lat,lng,acc:5,timestamp:f.now()}});f.tick(1000);await f.api.play('ABCDEFG',user,{action:'answer',index,answer});
+  }
+ }
+ const reviews=createReviewService({db:f.db,env:f.env,now:f.now});
+ const {creatorNotices}=await import('../worker/lib/creatorNotices.mjs');
+ const inbox=user=>creatorNotices(f.db,user.id,'test');
+ await reviews.save('ABCDEFG',f.users.alice,{action:'save',stars:5,comment:'Pěkná výprava'});
+ await reviews.save('ABCDEFG',f.users.alice,{action:'save',stars:5,comment:'Pěkná výprava'});
+ assert.equal((await inbox(f.users.author)).notices.length,1);assert.equal((await inbox(f.users.bob)).notices.length,0);
+ assert.equal((await inbox(f.users.author)).notices[0].type,'review');
+ await reviews.save('ABCDEFG',f.users.bob,{action:'save',stars:4,comment:''});
+ assert.equal((await inbox(f.users.author)).notices.length,2);
+ const owner=await reviews.manage('ABCDEFG',f.users.author),review=owner.items.find(r=>r.reviewKey==='alice');
+ assert.equal(owner.count,2);assert.equal(owner.average,4.5);assert.equal(owner.repliesReady,true);
+ const reply={action:'reply',reviewKey:review.reviewKey,reviewUpdatedAt:review.updatedAt,version:0,content:'Děkuji za komentář!'};
+ await assert.rejects(()=>reviews.save('ABCDEFG',f.users.bob,reply),e=>e.status===403);
+ await assert.rejects(()=>reviews.save('ABCDEFG',f.users.alice,reply),e=>e.status===403);
+ await reviews.save('ABCDEFG',f.users.author,reply);await reviews.save('ABCDEFG',f.users.author,reply);
+ assert.equal((await inbox(f.users.alice)).notices.length,1);assert.equal((await inbox(f.users.alice)).notices[0].type,'review-reply');
+ assert.equal((await creatorNotices(f.db,f.users.alice.id,'live')).notices.length,0);
+ const publicPage=await reviews.list('ABCDEFG',0);assert.equal(publicPage.items.find(r=>r.nickname==='alice').reply,reply.content);assert.equal(JSON.stringify(publicPage).includes('reviewKey'),false);
+ assert.equal((await reviews.manage('ABCDEFG',f.users.author)).items.find(r=>r.reviewKey==='alice').replyVersion,1);
+ await assert.rejects(()=>reviews.save('ABCDEFG',f.users.author,{...reply,content:'Stará verze'}),e=>e.status===409);
+ f.tick(1000);await reviews.save('ABCDEFG',f.users.author,{...reply,version:1,content:'Děkuji, těší mě to!'});
+ assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_review_replies').get().n,1);assert.equal((await inbox(f.users.alice)).notices.length,2);
+ const bob=owner.items.find(r=>r.reviewKey==='bob');await assert.rejects(()=>reviews.save('ABCDEFG',f.users.author,{...reply,reviewKey:'bob',reviewUpdatedAt:bob.updatedAt}),e=>e.status===409);
+ f.tick(1000);await reviews.save('ABCDEFG',f.users.alice,{action:'save',stars:3,comment:'Upravený komentář'});assert.equal((await inbox(f.users.author)).notices.length,3);
+ await assert.rejects(()=>reviews.save('ABCDEFG',f.users.author,{...reply,version:2}),e=>e.status===409);
+ f.native.exec("UPDATE patrac_expeditions SET payload=json_set(payload,'$.published',0) WHERE code='ABCDEFG'");
+ assert.equal((await reviews.manage('ABCDEFG',f.users.author)).count,2);assert.equal((await reviews.list('ABCDEFG',0,f.users.author)).items.length,2);
+ await assert.rejects(()=>reviews.manage('ABCDEFG',f.users.bob));await assert.rejects(()=>reviews.list('ABCDEFG',0));
+ f.native.exec("UPDATE patrac_expeditions SET payload=json_set(payload,'$.published',1) WHERE code='ABCDEFG'");
+ await reviews.save('ABCDEFG',f.users.alice,{action:'delete'});assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_review_replies').get().n,0);
+ assert.equal((await inbox(f.users.alice)).notices.length,2);
+ // A notice-write failure rolls back the review rather than silently losing its notification.
+ f.native.exec("CREATE TRIGGER fail_review_notice BEFORE INSERT ON patrac_review_notices BEGIN SELECT RAISE(ABORT,'test rollback'); END;");
+ await assert.rejects(()=>reviews.save('ABCDEFG',f.users.bob,{action:'save',stars:1,comment:'Failed change'}));
+ assert.equal((await reviews.manage('ABCDEFG',f.users.author)).items[0].stars,4);
+ }finally{f.native.close();}
+});

@@ -77,3 +77,7 @@
 .p-community-pin .p-pin-badge{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:2px solid #fff;border-radius:10px;background:#dcfa63;box-shadow:0 2px 6px #12205335;font-size:19px;line-height:1;font-weight:750;pointer-events:none}
 .p-community-pin.is-abandoned .p-pin-badge{background:#d4d8df;color:#4b5563}.p-community-pin.is-completed .p-pin-badge{background:#15803d;color:#fff}
 .p-community-pin.is-cluster .p-pin-badge{width:34px;height:34px;border-radius:50%;background:#2348df;color:#fff;font-size:13px;font-variant-numeric:tabular-nums}.p-cluster-list{max-height:50dvh;margin:12px 0}
+
+.p-creator-reply{margin:14px 0 4px;padding:12px 15px;border-left:3px solid #2348df;border-radius:0 10px 10px 0;background:#edf2ff}.p-creator-reply strong{color:#2348df;font-size:13px}.p-creator-reply p,.p-review-list article>p{white-space:pre-wrap;overflow-wrap:anywhere}.p-reply-form{display:grid;gap:10px;margin-top:12px}.p-notice-review,.p-notice-review-reply{border-color:#a8baf2;background:#f0f5ff}.p-notice-review a,.p-notice-review-reply a{display:block;margin:8px 0}
+
+.p-owner-reviews{margin:16px 0}.p-owner-reviews>summary{cursor:pointer;color:#2348df;font-weight:700;padding:8px 0}.p-owner-reviews .p-reviews{margin:12px 0 0}

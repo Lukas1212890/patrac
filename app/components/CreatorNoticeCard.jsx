@@ -2,6 +2,8 @@
 const date=value=>new Date(value).toLocaleDateString('cs-CZ',{dateStyle:'medium'});
 export default function CreatorNoticeCard({notice}){
  const type=notice.type;
+ if(['review','review-reply'].includes(type))return <article className={'p-moderation-notice p-notice-'+type}><strong>{type==='review'?(notice.updated?'Hráč upravil hodnocení vaší výpravy':notice.comment?'Nový komentář a hodnocení výpravy':'Nové hodnocení výpravy'):(notice.updated?'Tvůrce upravil odpověď na váš komentář':'Tvůrce odpověděl na váš komentář')}</strong><h3>{notice.name}</h3><p><b>{notice.nickname}</b>{type==='review'?' · '+notice.stars+' / 5 hvězdiček':''}</p>{type==='review'&&notice.comment&&<p>{notice.comment}</p>}{type==='review-reply'&&<p>{notice.reply}</p>}<a className="p-text-button" href={type==='review'?'/?reviews='+notice.code:'/?public='+notice.code}>{type==='review'?'Otevřít hodnocení výpravy':'Otevřít výpravu a odpověď'}</a><small>{new Date(notice.createdAt).toLocaleString('cs-CZ',{dateStyle:'medium',timeStyle:'short'})}</small></article>;
+
  if(!['delete-expedition','access','reward','limits'].includes(type))return <article className="p-moderation-notice p-notice-unknown"><strong>Oznámení se nepodařilo rozpoznat</strong><p>Obnovte přehled oznámení v profilu.</p></article>;
  const privateChanged=notice.oldPrivateLimit!==notice.privateLimit,publicChanged=notice.oldPublicLimit!==notice.publicLimit;
  const increased=notice.privateLimit>notice.oldPrivateLimit||notice.publicLimit>notice.oldPublicLimit;

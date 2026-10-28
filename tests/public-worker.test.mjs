@@ -15,6 +15,8 @@ test('Worker community flow enforces real sessions, two public slots, one concur
   for(const sql of readFileSync(new URL('../drizzle/0005_public_expeditions.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
   for(const sql of readFileSync(new URL('../drizzle/0006_public_reviews.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
   for(const sql of readFileSync(new URL('../drizzle/0007_creator_rewards.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
+  const replyMigration=readFileSync(new URL('../drizzle/0010_review_replies.sql',import.meta.url),'utf8');
+  for(const sql of replyMigration.match(/CREATE TRIGGER[\s\S]*?END;|CREATE (?:TABLE|INDEX)[\s\S]*?;/g))await db.prepare(sql).run();
   const password='public-worker-fixture-password-long-8642',hash=await hashPassword(password),stamp=Date.now(),tokens={};
   for(const id of ['author','player','unpaid']){
    await db.prepare('INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,1,?,?)').bind(id,id,id+'@example.com',stamp,stamp).run();
@@ -90,6 +92,17 @@ test('Worker community flow enforces real sessions, two public slots, one concur
 
   assert.equal((await request(reviewPath,{action:'save',stars:6,comment:''},tokens.player)).status,400);
   const posted=await request(reviewPath,{action:'save',stars:5,comment:'Pěkná výprava!'},tokens.player);assert.equal(posted.status,200,await posted.clone().text());
+  const managePath='/api/public/expeditions/'+code+'/reviews?manage=1';
+  assert.equal((await request(managePath,null,tokens.player)).status,403);
+  const managed=await(await request(managePath,null,tokens.author)).json();assert.equal(managed.repliesReady,true);
+  const target=managed.items[0],replyBody={action:'reply',reviewKey:target.reviewKey,reviewUpdatedAt:target.updatedAt,version:0,content:'Díky za návštěvu!'};
+  assert.equal((await request(reviewPath,replyBody,tokens.player)).status,403);
+  assert.equal((await request(reviewPath,replyBody,tokens.author)).status,200);
+  assert.equal((await request(reviewPath,replyBody,tokens.author)).status,200);
+  const playerInbox=await(await request('/api/account/notices?format=3',null,tokens.player)).json();assert.equal(playerInbox.notices.filter(n=>n.type==='review-reply').length,1);
+  assert.equal((await(await request('/api/account/notices?format=2',null,tokens.player)).json()).notices.some(n=>n.type==='review-reply'),false);
+  const authorInbox=await(await request('/api/account/notices?format=3',null,tokens.author)).json();assert.equal(authorInbox.notices.filter(n=>n.type==='review').length,1);
+  const ownerProfile=await(await request('/api/account',null,tokens.author)).json();assert.equal(ownerProfile.games.find(g=>g.code===code).rating.comments,1);
   const rated=await(await request('/api/public/expeditions/'+code)).json();assert.equal(rated.reviews.average,5);assert.equal(rated.reviews.count,1);assert.equal(rated.reviews.items[0].nickname,'New nickname');assert.equal(rated.reviews.ownReview,null);
   assert.equal((await request(reviewPath,{action:'save',stars:5,comment:''},tokens.author)).status,403);
   assert.equal((await(await request(reviewPath)).json()).items.length,1);
