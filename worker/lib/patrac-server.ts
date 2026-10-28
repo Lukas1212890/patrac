@@ -104,7 +104,7 @@ export async function viewExpedition(request: Request, code: string) {
   }
   if (game.visibility==='public') return json({role:'guest',game:meta,now});
   if (who.role === 'team') {
-    if(new URL(request.url).searchParams.get('summary')==='1')return json({role:'team',game:meta,team:{name:who.team.name,index:who.team.index,finishedAt:who.team.finishedAt,abandonedAt:who.team.abandonedAt},now});
+    if(new URL(request.url).searchParams.get('summary')==='1')return json({role:'team',game:meta,team:{name:who.team.name,index:who.team.index,finishedAt:who.team.finishedAt,abandonedAt:who.team.abandonedAt,endReason:who.team.endReason},now});
     const counts = await db().prepare("SELECT COUNT(*) as total, SUM(CASE WHEN json_extract(payload, '$.finishedAt') IS NOT NULL THEN 1 ELSE 0 END) as finished FROM patrac_teams WHERE code = ?").bind(code).first();
     const projection = teamProjection(game, who.team, now);
     if (projection.station?.hints) projection.station.hints = await Promise.all(projection.station.hints.map(async (hint: any) => {
@@ -152,7 +152,7 @@ export async function changeExpedition(request: Request, code: string) {
       }
       await requirePublicAccess(db(),env,who.accountId);
       if(input.action==='publish'){
-        validatePublicInfo(game.publicInfo,routeInfoFor(game));validateExpedition(game);if(game.mode!=='race')throw new GameError('Veřejná výprava musí být na čas.');
+        validatedRouteInfo(game,game.stations);validatePublicInfo(game.publicInfo,routeInfoFor(game));validateExpedition(game);if(game.mode!=='race')throw new GameError('Veřejná výprava musí být na čas.');
         const changed=await db().prepare("UPDATE patrac_expeditions SET payload=json_set(payload,'$.published',json('true'),'$.status','running'),version=version+1 WHERE code=? AND version=?").bind(code,row.version).run();
         if(!changed.meta.changes)throw new GameError('Výprava se mezitím změnila.',409);return json({ok:true});
       }
@@ -174,6 +174,7 @@ export async function changeExpedition(request: Request, code: string) {
       const validated=validateExpedition(input.game);
       next = await storePhotos({ ...game, ...validated,...validatedRouteInfo(input.game,validated.stations) }, code, game);
     } else if (input.action === 'start') {
+      validatedRouteInfo(game,game.stations);
       const count = await db().prepare('SELECT COUNT(*) as n FROM patrac_teams WHERE code = ?').bind(code).first<any>();
       if (count.n < 1) throw new GameError('Nejdříve připojte alespoň jednoho hráče.');
       next = { ...game, status: 'running', startedAt: Date.now() };

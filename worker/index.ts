@@ -1,3 +1,4 @@
+import {expireAttempts} from './lib/expiredAttempts.mjs';
 import { env } from 'cloudflare:workers';
 import { allowedOrigin } from './origin.mjs';
 import { createExpedition, viewExpedition, changeExpedition, errorResponse } from './lib/patrac-server';
@@ -9,7 +10,7 @@ import * as account from './account';
 import * as config from './config';
 import {createCreatorRewards} from './lib/creatorRewards.mjs';
 export default {
-  async scheduled(){await createCreatorRewards({db:env.DB,env}).sweep();},
+  async scheduled(){await expireAttempts(env.DB);await createCreatorRewards({db:env.DB,env}).sweep();},
   async fetch(request: Request): Promise<Response> {
     const origin = request.headers.get('origin');
     if (origin && !allowedOrigin(origin, env.PATRAC_ALLOWED_ORIGINS)) return Response.json({ error: 'Nepovolený původ požadavku.' }, { status: 403 });
@@ -22,6 +23,7 @@ export default {
     const path = new URL(request.url).pathname;
     let response: Response;
     try {
+      if(path.startsWith('/api/public/') || path.startsWith('/api/expeditions') || path==='/api/account') await expireAttempts(env.DB);
       if(path.startsWith('/api/public/')) response=await publicRequest(request);
       else if (path === '/api/billing' || path.startsWith('/api/billing/')) response = await billingRequest(request);
       else if (path.startsWith('/api/admin/')) {

@@ -1,3 +1,4 @@
+import {expireAttempts} from './lib/expiredAttempts.mjs';
 import { env } from 'cloudflare:workers';
 import { accountAuth } from './auth';
 import { billingEnvironment } from './lib/billing.mjs';
@@ -27,6 +28,7 @@ async function readAdminBody(request: Request) {
 export async function adminRequest(request: Request) {
   try {
     const url = new URL(request.url), api = service();
+    if (url.pathname.startsWith('/api/admin/users/') || (url.pathname==='/api/admin/users' && request.method==='POST')) { await api.session(request); await expireAttempts(env.DB); }
     if (request.method === 'GET' && url.pathname === '/api/admin/session') return Response.json(await api.session(request));
     if (request.method === 'GET' && url.pathname === '/api/admin/users') return Response.json(await api.list(request,{q:url.searchParams.get('q')||'',page:url.searchParams.get('page')||'0'}));
     if (request.method === 'GET' && url.pathname.startsWith('/api/admin/users/')) return Response.json(await api.detail(request,decodeURIComponent(url.pathname.slice('/api/admin/users/'.length))));

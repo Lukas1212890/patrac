@@ -26,7 +26,7 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
  async function ready(){if(!await communityReady(db))throw new GameError('Veřejné výpravy se právě připravují.',503);}
  async function paid(user){if(!user)throw new GameError('Pro veřejnou výpravu se přihlaste.',401);return requirePublicAccess(db,env,user.id,now());}
  async function ownAttempt(code,userId){return db.prepare('SELECT a.id AS attempt_id,a.created_at,t.*,e.payload AS game_payload FROM patrac_public_attempts a JOIN patrac_teams t ON t.id=a.team_id JOIN patrac_expeditions e ON e.code=a.code WHERE a.code=? AND a.user_id=? AND a.environment=?').bind(code,userId,environment).first();}
- function attemptSummary(row){if(!row)return null;const team=JSON.parse(row.payload),game=JSON.parse(row.game_payload);return{id:row.attempt_id,code:row.code,name:game.name,startedAt:team.startedAt,finishedAt:team.finishedAt,abandonedAt:team.abandonedAt??null,index:team.index,totalStations:game.stations.length,totalMs:score(game,team,now()).totalMs,hidden:!game.published,deleted:game.status==='deleting'};}
+ function attemptSummary(row){if(!row)return null;const team=JSON.parse(row.payload),game=JSON.parse(row.game_payload);return{id:row.attempt_id,code:row.code,name:game.name,startedAt:team.startedAt,finishedAt:team.finishedAt,abandonedAt:team.abandonedAt??null,endReason:team.endReason??null,index:team.index,totalStations:game.stations.length,totalMs:score(game,team,now()).totalMs,hidden:!game.published,deleted:game.status==='deleting'};}
  async function leaderboard(code){const rows=await db.prepare(`SELECT substr(u.name,1,60) AS nickname,
   CAST(json_extract(t.payload,'$.finishedAt') AS INTEGER)-CAST(json_extract(t.payload,'$.startedAt') AS INTEGER)+COALESCE(CAST(json_extract(t.payload,'$.penaltyMs') AS INTEGER),0) AS totalMs,
   json_extract(t.payload,'$.finishedAt') AS finishedAt
@@ -60,6 +60,7 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
   if(confirmation!==true)throw new GameError('Potvrďte jediný pokus a zveřejnění přezdívky s výsledkem.');
   const existing=await ownAttempt(code,user.id);if(existing)return{attempt:attemptSummary(existing),reused:true};
   const card=await db.prepare(`SELECT ${CARD} ${BASE} WHERE e.code=? AND ${PUBLIC}`).bind(code).first();if(!card)throw new GameError('Výprava není zveřejněná.',404);
+  if(safeCard(card).estimatedMinutes>1440)throw new GameError('Výprava má odhad delší než 24 hodin. Autor musí nejprve upravit její trasu nebo odhad.');
   if(card.ownerId===user.id)throw new GameError('Autor nemůže soutěžit v žebříčku vlastní výpravy.',403);
   const stamp=now(),id=crypto.randomUUID(),teamId=crypto.randomUUID(),team={...newTeam(teamId,String(user.nickname||'Hráč').trim().slice(0,60),stamp),startedAt:stamp};
   const available=`EXISTS(SELECT 1 FROM patrac_expeditions e WHERE e.code=? AND ${PUBLIC}) AND NOT EXISTS(SELECT 1 FROM patrac_public_attempts WHERE code=? AND user_id=? AND environment=?)`;

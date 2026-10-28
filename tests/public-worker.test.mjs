@@ -123,5 +123,22 @@ assert.equal(board.myResults.stats.completed,1);assert.deepEqual(board.myExpedit
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_public_attempts').first()).n,0);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_public_reviews').first()).n,0);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_creator_rewards').first()).n,1);
   assert.equal((await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).status,404);
+  // A real API read must persist timeouts even when the hourly cron has not run.
+  assert.equal((await request('/api/admin/users',{...limitInput,version:2,requestKey:crypto.randomUUID()},tokens.author)).status,200);
+  const expiryCreate=await request('/api/expeditions',game,tokens.author);assert.equal(expiryCreate.status,201);
+  const expiryCode=(await expiryCreate.json()).code;
+  assert.equal((await request('/api/expeditions/'+expiryCode,{action:'publish'},tokens.author)).status,200);
+  const expiryPath='/api/public/expeditions/'+expiryCode;
+  assert.equal((await request(expiryPath+'/start',{confirm:true},tokens.player)).status,200);
+  await db.prepare("UPDATE patrac_teams SET payload=json_set(payload,'$.startedAt',?),version=version+1 WHERE code=?").bind(Date.now()-49*3600000,expiryCode).run();
+  const expiredOwner=await(await request('/api/expeditions/'+expiryCode,null,tokens.author)).json();assert.equal(expiredOwner.activePlayers,0);assert.equal(expiredOwner.publicLocked,false);
+  const expiredPlay=await(await request(expiryPath+'/play',null,tokens.player)).json();assert.equal(expiredPlay.team.endReason,'timeout');assert.equal(expiredPlay.team.finishedAt,null);assert.equal(expiredPlay.team.station,null);assert.equal(expiredPlay.team.elapsedMs,48*3600000);
+  const retried=await(await request(expiryPath+'/start',{confirm:true},tokens.player)).json();assert.equal(retried.reused,true);assert.equal(retried.attempt.endReason,'timeout');
+  const expiredMap=await(await request('/api/public/expeditions',null,tokens.player)).json();assert.equal(expiredMap.expeditions.find(e=>e.code===expiryCode).playStatus,'abandoned');
+  assert.equal((await request(expiryPath+'/play',{action:'answer',index:0,answer:'first'},tokens.player)).status,409);
+  const expiredHistory=await(await request('/api/public/attempts',null,tokens.player)).json();assert.equal(expiredHistory.attempts.find(a=>a.code===expiryCode).endReason,'timeout');
+  const longGame={...game,stations:[station,{...station,lat:0,lng:0}]};
+  assert.equal((await request('/api/expeditions/'+expiryCode,{action:'save',version:expiredOwner.version,game:longGame},tokens.author)).status,400);
+  assert.equal((await request('/api/expeditions/'+expiryCode,{action:'hide'},tokens.author)).status,200);
  }finally{await mf.dispose();}
 });

@@ -8,7 +8,7 @@ export async function checkPrivateHistory(entries,load,signal){
    const session=pending[index++];
    try{
     const value=await load(session,signal);
-    if(value.role==='team')checked.push({session,gameName:value.game.name,name:value.team.name,finishedAt:value.team.finishedAt,index:value.team.index,totalStations:value.game.totalStations});
+    if(value.role==='team')checked.push({session,gameName:value.game.name,name:value.team.name,finishedAt:value.team.finishedAt,abandonedAt:value.team.abandonedAt,endReason:value.team.endReason,index:value.team.index,totalStations:value.game.totalStations});
     else unverified=true;
    }catch(error){if([404,410].includes(error.status))checked.push({session,removed:true});else unverified=true;}
   }
