@@ -39,7 +39,9 @@ export async function removeExpedition(db,bucket,{code,userId,version,confirmati
  }catch{throw new GameError('Výprava čeká na dokončení mazání fotografií. Obnovte přehled a zkuste ji smazat znovu.',503);}
  const guard="EXISTS(SELECT 1 FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND c.creator_id=? AND e.version=? AND json_extract(e.payload,'$.status')='deleting')";
  const hasAttempts=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_public_attempts'").first();
+ const hasReviews=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_public_reviews'").first();
  const results=await db.batch([
+  ...(hasReviews?[db.prepare('DELETE FROM patrac_public_reviews WHERE code=? AND '+guard).bind(code,code,userId,revision)]:[]),
   ...(hasAttempts?[db.prepare('DELETE FROM patrac_public_attempts WHERE code=? AND '+guard).bind(code,code,userId,revision)]:[]),
   db.prepare('DELETE FROM patrac_teams WHERE code=? AND '+guard).bind(code,code,userId,revision),
   db.prepare("DELETE FROM patrac_creator_games WHERE code=? AND creator_id=? AND EXISTS(SELECT 1 FROM patrac_expeditions WHERE code=? AND version=? AND json_extract(payload,'$.status')='deleting')").bind(code,userId,code,revision),

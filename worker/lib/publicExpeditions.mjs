@@ -1,5 +1,6 @@
 import {GameError,newTeam,applyAction,teamProjection,score} from './patrac-engine.mjs';
 import {accessState,billingEnvironment} from './billing.mjs';
+import {createReviewService,reviewsReady} from './publicReviews.mjs';
 export async function communityReady(db){return !!await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_public_attempts'").first();}
 export function validatePublicInfo(value){
  const info=value||{};
@@ -20,7 +21,7 @@ const PUBLIC="json_extract(e.payload,'$.visibility')='public' AND json_extract(e
 const BASE='FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code JOIN patrac_auth_user u ON u.id=c.creator_id';
 const safeCard=({ownerId,...card})=>card;
 export function createPublicService({db,env,revealPhoto,now=Date.now}){
- const environment=billingEnvironment(env);
+ const environment=billingEnvironment(env),reviews=createReviewService({db,env,now});
  async function ready(){if(!await communityReady(db))throw new GameError('Veřejné výpravy se právě připravují.',503);}
  async function paid(user){if(!user)throw new GameError('Pro veřejnou výpravu se přihlaste.',401);return requirePublicAccess(db,env,user.id,now());}
  async function ownAttempt(code,userId){return db.prepare('SELECT a.id AS attempt_id,a.created_at,t.*,e.payload AS game_payload FROM patrac_public_attempts a JOIN patrac_teams t ON t.id=a.team_id JOIN patrac_expeditions e ON e.code=a.code WHERE a.code=? AND a.user_id=? AND a.environment=?').bind(code,userId,environment).first();}
@@ -34,11 +35,16 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
  async function listing(bounds){if(!await communityReady(db))return{ready:false,expeditions:[]};
   let box=[-180,-85,180,85];if(bounds){box=bounds.split(',').map(Number);if(box.length!==4||!box.every(Number.isFinite)||box[0]<-180||box[2]>180||box[1]<-90||box[3]>90||box[0]>box[2]||box[1]>box[3])throw new GameError('Neplatná oblast mapy.');}
   const rows=await db.prepare(`SELECT ${CARD} ${BASE} WHERE ${PUBLIC} AND json_extract(e.payload,'$.stations[0].lng') BETWEEN ? AND ? AND json_extract(e.payload,'$.stations[0].lat') BETWEEN ? AND ? ORDER BY e.code LIMIT 151`).bind(box[0],box[2],box[1],box[3]).all();
-  return{ready:true,expeditions:rows.results.slice(0,150).map(safeCard),hasMore:rows.results.length>150};
+  const expeditions=rows.results.slice(0,150).map(safeCard);
+  if(expeditions.length&&await reviewsReady(db)){
+   const ratings=await db.prepare(`SELECT code,COUNT(*) AS count,ROUND(AVG(stars),1) AS average FROM patrac_public_reviews WHERE environment=? AND code IN (${expeditions.map(()=>'?').join(',')}) GROUP BY code`).bind(environment,...expeditions.map(e=>e.code)).all();
+   const byCode=new Map(ratings.results.map(r=>[r.code,{count:r.count,average:r.average}]));for(const item of expeditions)item.rating=byCode.get(item.code)||{count:0,average:null};
+  }
+  return{ready:true,expeditions,hasMore:rows.results.length>150};
  }
  async function detail(code,user){await ready();const card=await db.prepare(`SELECT ${CARD} ${BASE} WHERE e.code=? AND ${PUBLIC}`).bind(code).first();
   if(!card)throw new GameError('Výprava už není veřejně dostupná.',404);
-  return{environment,expedition:safeCard(card),leaderboard:await leaderboard(code),attempt:user?attemptSummary(await ownAttempt(code,user.id)):null,access:user?await accessState(db,user.id,billingEnvironment(env),now()):{active:false},isAuthor:card.ownerId===user?.id,now:now()};
+  return{environment,expedition:safeCard(card),reviews:await reviews.detail(code,user,card.ownerId),leaderboard:await leaderboard(code),attempt:user?attemptSummary(await ownAttempt(code,user.id)):null,access:user?await accessState(db,user.id,billingEnvironment(env),now()):{active:false},isAuthor:card.ownerId===user?.id,now:now()};
  }
  async function start(code,user,confirmation){await ready();await paid(user);
   if(confirmation!==true)throw new GameError('Potvrďte jediný pokus a zveřejnění přezdívky s výsledkem.');

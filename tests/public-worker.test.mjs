@@ -12,6 +12,7 @@ test('Worker community flow enforces real sessions, two public slots, one concur
   const db=await mf.getD1Database('DB');for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0004_billing.sql'])for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
   const before=await(await request('/api/public/expeditions')).json();assert.equal(before.ready,false);
   for(const sql of readFileSync(new URL('../drizzle/0005_public_expeditions.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
+  for(const sql of readFileSync(new URL('../drizzle/0006_public_reviews.sql',import.meta.url),'utf8').split(';').map(v=>v.trim()).filter(Boolean))await db.prepare(sql).run();
   const password='public-worker-fixture-password-long-8642',hash=await hashPassword(password),stamp=Date.now(),tokens={};
   for(const id of ['author','player','unpaid']){
    await db.prepare('INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,1,?,?)').bind(id,id,id+'@example.com',stamp,stamp).run();
@@ -45,11 +46,23 @@ test('Worker community flow enforces real sessions, two public slots, one concur
   const riddle=await(await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).json();assert.equal(riddle.team.station.question,'Secret one');assert.equal(riddle.team.station.hints[0].content,undefined);
   assert.equal((await request('/api/auth/update-user',{name:'New nickname'},tokens.player)).status,200);
   const repeated=await(await request('/api/public/expeditions/'+code+'/start',{confirm:true},tokens.player)).json();assert.equal(repeated.attempt.id,first.attempt.id);assert.equal(repeated.attempt.startedAt,first.attempt.startedAt);
+  const reviewPath='/api/public/expeditions/'+code+'/reviews';
+  assert.equal((await request(reviewPath,{action:'save',stars:5,comment:'Pěkné!'})).status,401);
+  assert.equal((await request(reviewPath,{action:'save',stars:5,comment:'Pěkné!'},tokens.player)).status,403);
+  await request('/api/public/expeditions/'+code+'/play',{action:'answer',index:0,answer:'first'},tokens.player);
+  await request('/api/public/expeditions/'+code+'/play',{action:'arrive',index:1,position:{lat:49.301,lng:17.391,acc:5,timestamp:Date.now()}},tokens.player);
+  assert.equal((await request('/api/public/expeditions/'+code+'/play',{action:'answer',index:1,answer:'last'},tokens.player)).status,200);
+  assert.equal((await request(reviewPath,{action:'save',stars:6,comment:''},tokens.player)).status,400);
+  const posted=await request(reviewPath,{action:'save',stars:5,comment:'Pěkná výprava!'},tokens.player);assert.equal(posted.status,200,await posted.clone().text());
+  const rated=await(await request('/api/public/expeditions/'+code)).json();assert.equal(rated.reviews.average,5);assert.equal(rated.reviews.count,1);assert.equal(rated.reviews.items[0].nickname,'New nickname');assert.equal(rated.reviews.ownReview,null);
+  assert.equal((await request(reviewPath,{action:'save',stars:5,comment:''},tokens.author)).status,403);
+  assert.equal((await(await request(reviewPath)).json()).items.length,1);
   assert.equal((await request('/api/expeditions/'+code,{action:'hide'},tokens.author)).status,200);assert.equal((await(await request('/api/public/expeditions')).json()).expeditions.length,0);assert.equal((await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).status,200);
   assert.equal((await(await request('/api/public/attempts',null,tokens.unpaid)).json()).attempts.length,0);
   const finalOwner=await(await request('/api/expeditions/'+code,null,tokens.author)).json();
   assert.equal((await request('/api/expeditions/'+code,{action:'delete',version:finalOwner.version,confirmation:code},tokens.author)).status,200);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_public_attempts').first()).n,0);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_public_reviews').first()).n,0);
   assert.equal((await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).status,404);
  }finally{await mf.dispose();}
 });

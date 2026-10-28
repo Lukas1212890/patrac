@@ -1,6 +1,6 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {Compass,LocateFixed,MapPin,Clock3,List,RefreshCw,ChevronRight} from 'lucide-react';
+import {Compass,LocateFixed,MapPin,Clock3,List,RefreshCw,ChevronRight,Star} from 'lucide-react';
 import {loadMap,RasterMap} from './PatracMap';
 import {getBaseMapConfig} from '../lib/mapConfig';
 import {publicRequest,difficulties} from '../lib/public-client';
@@ -32,7 +32,7 @@ export default function CommunityMap({onSelect,onJoin}){
  {result&&!result.ready&&<p className="p-small">Veřejné výpravy právě připravujeme. Soukromou hru můžete otevřít kódem.</p>}
  {result?.ready&&!result.expeditions.length&&<p className="p-small">V této oblasti zatím žádná výprava není. Posuňte mapu nebo zveřejněte vlastní v záložce Tvořit.</p>}
  {result?.hasMore&&<p className="p-small">Je tu více výprav. Přibližte mapu pro přesnější výběr.</p>}
- {list&&<div className="p-community-list" data-patrac-pan="true">{result?.expeditions.map(item=><button key={item.code} onClick={()=>onSelect(item.code)}><span className="p-discovery-icon"><MapPin size={20}/></span><span><strong>{item.name}</strong><small>{difficulties[item.difficulty]} · {item.distanceKm} km · {item.estimatedMinutes} min</small></span><ChevronRight size={18}/></button>)}</div>}
+ {list&&<div className="p-community-list" data-patrac-pan="true">{result?.expeditions.map(item=><button key={item.code} onClick={()=>onSelect(item.code)}><span className="p-discovery-icon"><MapPin size={20}/></span><span><strong>{item.name}</strong><small>{difficulties[item.difficulty]} · {item.distanceKm} km · {item.estimatedMinutes} min</small>{item.rating?.count>0&&<small className="p-map-rating"><Star size={13} fill="currentColor"/> {Number(item.rating.average).toLocaleString('cs-CZ')} / 5 · {item.rating.count} hodnocení</small>}</span><ChevronRight size={18}/></button>)}</div>}
  <button type="button" className="p-primary p-code-entry" onClick={onJoin}>Zahájit soukromou výpravu <ChevronRight size={16}/></button>
  </section></main>;
 }

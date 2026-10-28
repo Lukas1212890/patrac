@@ -96,3 +96,8 @@ Jedna kombinace účtu, veřejné výpravy a platebního prostředí má nejvý�
 Veřejná hra používá samostatné `/api/public/*` routy s účtem, ne sdílený týmový klíč. Starý soukromý join/answer/hint endpoint odmítá veřejné hry. TOP 10 obsahuje jen dokončené pokusy podle serverového času plus penalizací, přezdívku z profilu a dokončení. Jeden účet nezabírá více příček v jedné výpravě. Veškeré časování a postup ukládá D1 s kontrolou revizí. Profil dovoluje změnu přezdívky přes vlastní Better Auth relaci.
 
 Účetní admin, přihlášení, Stripe, SMTP a stávající soukromá navigace zůstávají ve stejných oddělených prostředcích Pátrače. Žádná data Stopaře se touto změnou neupravují. Automatické mazání výprav po dohrání není implementované ani zapnuté. Ruční smazání celé výpravy odstraní také její veřejné pokusy a související fotografie.
+
+
+### Hodnocení veřejných výprav
+
+Po migraci `drizzle/0006_public_reviews.sql` detail veřejné výpravy nabízí 1–5 hvězdiček a volitelný komentář do 1000 znaků. Hodnotit smí jen ověřený účet s dokončeným pokusem ve stejném prostředí; autor vlastní výpravu nehodnotí. Vypršení předplatného nebrání zpětné vazbě po dohrání. Každý účet má jedno upravitelné a odstranitelné hodnocení na výpravu a prostředí, chráněné primárním klíčem. Komentáře se vykreslují jako prostý text a používají přezdívku z profilu; veřejná odpověď neobsahuje ID účtů ani e-maily. Seznam se načítá po 20 položkách. Průměr a počet hodnocení se ukazují v detailu a seznamu mapy. Testovací a ostrá hodnocení se nemíchají. Smazání výpravy odstraní i hodnocení. Před migrací tato sekce zůstává skrytá a ostatní funkce dál fungují.

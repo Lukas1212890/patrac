@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
+import {createReviewService,validateReview} from '../worker/lib/publicReviews.mjs';
 import {createPublicService,communityReady} from '../worker/lib/publicExpeditions.mjs';
 import {validateExpedition} from '../worker/lib/patrac-engine.mjs';
 import {reserveExpedition,expeditionCount,removeExpedition} from '../worker/lib/expeditionLifecycle.mjs';
 function fixture(){
  const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');
- for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0004_billing.sql','0005_public_expeditions.sql'])native.exec(readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
+ for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0004_billing.sql','0005_public_expeditions.sql','0006_public_reviews.sql'])native.exec(readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
  const statement=(sql,values=[])=>({bind:(...v)=>statement(sql,v),async first(){return native.prepare(sql).get(...values)||null;},async all(){return{results:native.prepare(sql).all(...values)};},async run(){return{meta:{changes:Number(native.prepare(sql).run(...values).changes)}};}});
  const db={prepare:sql=>statement(sql),async batch(statements){native.exec('BEGIN');try{const out=[];for(const s of statements)out.push(await s.run());native.exec('COMMIT');return out;}catch(e){native.exec('ROLLBACK');throw e;}}};
  let stamp=Date.now();const users={};
@@ -80,4 +81,40 @@ test('sandbox attempts and leaderboards do not consume a live attempt',async()=>
  assert.equal((await live.detail('ABCDEFG',f.users.alice)).attempt,null);assert.equal((await live.history(f.users.alice)).attempts.length,0);
  const actual=await live.start('ABCDEFG',f.users.alice,true);assert.notEqual(actual.attempt.id,testAttempt.attempt.id);
  assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_public_attempts').get().n,2);f.native.close();
+});
+
+test('reviews require completion, allow one editable rating, isolate accounts and environments, and update map averages',async()=>{
+ const f=fixture();await f.add('ABCDEFG');const reviews=createReviewService({db:f.db,env:f.env,now:f.now});
+ const input={action:'save',stars:5,comment:' Pěkná trasa! '};
+ await assert.rejects(()=>reviews.save('ABCDEFG',null,input),e=>e.status===401);
+ await assert.rejects(()=>reviews.save('ABCDEFG',f.users.author,input),e=>e.status===403);
+ await assert.rejects(()=>reviews.save('ABCDEFG',f.users.alice,input),e=>e.status===403);
+ for(const value of [0,6,1.5,'5',null])assert.throws(()=>validateReview({stars:value,comment:''}));
+ assert.throws(()=>validateReview({stars:5,comment:'x'.repeat(1001)}));
+ for(const user of [f.users.alice,f.users.bob]){
+  await f.api.start('ABCDEFG',user,true);
+  f.native.prepare("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',?) WHERE id=(SELECT team_id FROM patrac_public_attempts WHERE code=? AND user_id=?)").run(f.now(), 'ABCDEFG',user.id);
+ }
+ // A completed player may review after access expires; no extra purchase is needed to leave feedback.
+ f.native.exec("UPDATE patrac_access SET expires_at=0 WHERE user_id='alice'");
+ await reviews.save('ABCDEFG',f.users.alice,input);f.tick(1000);
+ await reviews.save('ABCDEFG',f.users.alice,{action:'save',stars:3,comment:'<script>alert(1)</script>'});
+ let detail=await f.api.detail('ABCDEFG',f.users.alice);assert.equal(detail.reviews.count,1);assert.equal(detail.reviews.average,3);assert.equal(detail.reviews.canReview,true);assert.equal(detail.reviews.ownReview.stars,3);assert.equal(detail.reviews.items[0].comment,'<script>alert(1)</script>');assert.ok(detail.reviews.items[0].updatedAt>detail.reviews.items[0].createdAt);
+ await reviews.save('ABCDEFG',f.users.bob,{action:'save',stars:5,comment:''});
+ assert.equal((await f.api.detail('ABCDEFG',null)).reviews.average,4);
+ assert.deepEqual((await f.api.listing()).expeditions[0].rating,{count:2,average:4});
+ const exposed=JSON.stringify((await f.api.detail('ABCDEFG',null)).reviews);for(const value of ['user_id','@example.com','alice@example.com'])assert.equal(exposed.includes(value),false);
+ assert.equal((await f.api.detail('ABCDEFG',f.users.unpaid)).reviews.ownReview,null);
+ const live=createReviewService({db:f.db,env:{PATRAC_STRIPE_MODE:'live'},now:f.now});assert.equal((await live.detail('ABCDEFG',f.users.alice,'author')).count,0);await assert.rejects(()=>live.save('ABCDEFG',f.users.alice,input),e=>e.status===403);
+ await reviews.save('ABCDEFG',f.users.unpaid,{action:'delete',user_id:'bob'});assert.equal((await f.api.detail('ABCDEFG',null)).reviews.count,2);
+ await reviews.save('ABCDEFG',f.users.alice,{action:'delete'});detail=await f.api.detail('ABCDEFG',null);assert.equal(detail.reviews.count,1);assert.equal(detail.reviews.average,5);
+ await assert.rejects(()=>reviews.list('ABCDEFG','-1'));await assert.rejects(()=>reviews.list('ABCDEFG','1.5'));
+ f.native.exec("UPDATE patrac_expeditions SET payload=json_set(payload,'$.published',0) WHERE code='ABCDEFG'");await assert.rejects(()=>reviews.save('ABCDEFG',f.users.bob,input),e=>e.status===404);await assert.rejects(()=>reviews.list('ABCDEFG','0'),e=>e.status===404);
+ const row=f.native.prepare("SELECT version FROM patrac_expeditions WHERE code='ABCDEFG'").get();await removeExpedition(f.db,{list:async()=>({objects:[],truncated:false}),delete:async()=>{}},{code:'ABCDEFG',userId:'author',version:row.version,confirmation:'ABCDEFG'});assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_public_reviews').get().n,0);f.native.close();
+});
+test('reviews paginate without exposing account identifiers and tolerate a staged missing migration',async()=>{
+ const f=fixture();await f.add('ABCDEFG');const reviews=createReviewService({db:f.db,env:f.env,now:f.now});
+ for(let i=0;i<23;i++){const id='reviewer'+i;f.native.prepare('INSERT INTO patrac_auth_user VALUES(?,?,?,1,NULL,?,?)').run(id,id,id+'@example.com',f.now(),f.now());f.native.prepare("INSERT INTO patrac_public_reviews VALUES(?,?,'test',5,?,?,?)").run('ABCDEFG',id,'Recenze '+i,f.now()+i,f.now()+i);}
+ const first=await reviews.list('ABCDEFG','0');assert.equal(first.items.length,20);assert.equal(first.hasMore,true);const second=await reviews.list('ABCDEFG',String(first.nextOffset));assert.equal(second.items.length,3);assert.equal(second.hasMore,false);assert.equal(new Set([...first.items,...second.items].map(r=>r.nickname)).size,23);
+ f.native.exec('DROP TABLE patrac_public_reviews');assert.equal((await f.api.detail('ABCDEFG',null)).reviews.ready,false);assert.equal((await f.api.listing()).expeditions.length,1);await assert.rejects(()=>reviews.save('ABCDEFG',f.users.alice,{action:'save',stars:5,comment:''}),e=>e.status===503);f.native.close();
 });
