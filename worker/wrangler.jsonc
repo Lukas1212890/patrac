@@ -18,7 +18,7 @@
     }
   ],
   "vars": {
-    "PATRAC_REGISTRATION_READY": "false",
+    "PATRAC_REGISTRATION_READY": "true",
     "PATRAC_ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,https://patrac-lukasbednariks-3292s-projects.vercel.app,https://patrac.stopik.cz",
     "PATRAC_AUTH_BASE_URL": "https://patrac-api.bednarik.workers.dev",
     "PATRAC_MAIL_RELAY_URL": "https://patrac.stopik.cz/api/internal/account-mail"
