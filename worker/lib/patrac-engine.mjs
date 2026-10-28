@@ -22,7 +22,7 @@ export function validateExpedition(input) {
       if (h.type === 'photo' && (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(h.content) || h.content.length > 250000)) throw new GameError('Fotografii nápovědy zmenšete pod 180 kB.');
       const minutes = Number(h.minutes ?? 2);
       if (!Number.isInteger(minutes) || minutes < 0 || minutes > 60) throw new GameError('Penalizace musí být 0 až 60 minut.');
-      return { id: `h${hi}`, type: h.type, content: h.content, minutes };
+      return { id: `h${hi}`, type: h.type, content: h.content, minutes, ...(h.type === 'photo' ? { photoVersion: h.photoVersion === 2 ? 2 : 0, ...(typeof h.photoKey === 'string' ? { photoKey: h.photoKey } : {}) } : {}) };
     }) : [];
     if (hints.length > 5) throw new GameError('Ke stanovišti lze přidat nejvýše pět nápověd.');
     return { id: `s${index}`, name: text(s.name, 100, `název stanoviště ${index + 1}`), ...coords, radius,

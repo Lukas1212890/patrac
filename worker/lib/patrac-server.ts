@@ -1,3 +1,4 @@
+import { storeHintPhotos, removeReplacedPhotos } from './photoStorage.mjs';
 import { allowedOrigin } from '../origin.mjs';
 import { creatorIdentity } from './creator-server';
 import { env } from 'cloudflare:workers';
@@ -22,17 +23,9 @@ export function errorResponse(error: any) {
   console.error('Patrac request failed', error?.name, String(error?.message || '').slice(0, 150));
   return json({ error: 'Požadavek se nepodařilo uložit. Zkuste to znovu.' }, 500);
 }
-async function storePhotos(config: any, code: string) {
-  for (const station of config.stations) for (const hint of station.hints) {
-    if (hint.type !== 'photo') continue;
-    if (!env.BUCKET) throw new GameError('Úložiště fotografií není dostupné.', 503);
-    const [prefix, data] = hint.content.split(',');
-    const key = `hints/${code}/${crypto.randomUUID()}`;
-    const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
-    await env.BUCKET.put(key, bytes, { httpMetadata: { contentType: prefix.slice(5, prefix.indexOf(';')) } });
-    hint.photoKey = key; hint.content = '';
-  }
-  return config;
+async function storePhotos(config: any, code: string, previous?: any) {
+  if (!env.BUCKET && config.stations.some((s: any) => s.hints.some((h: any) => h.type === 'photo'))) throw new GameError('Úložiště fotografií není dostupné.', 503);
+  return storeHintPhotos(config, code, env.BUCKET, previous);
 }
 async function revealPhoto(hint: any) {
   if (hint.type !== 'photo' || !hint.photoKey) return hint;
@@ -129,7 +122,7 @@ export async function changeExpedition(request: Request, code: string) {
       const count = await db().prepare('SELECT COUNT(*) as n FROM patrac_teams WHERE code = ?').bind(code).first<any>();
       if (count.n > 0) throw new GameError('Po připojení týmů už trasu neměňte. Pro jinou trasu vytvořte novou výpravu.', 409);
       if (input.version !== row.version) throw new GameError('Výpravu mezitím změnilo jiné okno. Obnovte ji.', 409);
-      next = await storePhotos({ ...game, ...validateExpedition(input.game) }, code);
+      next = await storePhotos({ ...game, ...validateExpedition(input.game) }, code, game);
     } else if (input.action === 'start') {
       const count = await db().prepare('SELECT COUNT(*) as n FROM patrac_teams WHERE code = ?').bind(code).first<any>();
       if (count.n < 1) throw new GameError('Nejdříve připojte alespoň jeden tým.');
@@ -139,6 +132,9 @@ export async function changeExpedition(request: Request, code: string) {
     const values = input.action === 'save' ? [JSON.stringify(next), code, row.version, code] : [JSON.stringify(next), code, row.version];
     const result = await db().prepare(sql).bind(...values).run();
     if (!result.meta.changes) throw new GameError('Průběh se změnil. Obnovte výpravu.', 409);
+    if (input.action === 'save') {
+      try { await removeReplacedPhotos(game, next, code, env.BUCKET); } catch { console.warn('Patrac replaced photo cleanup failed'); }
+    }
     return json({ ok: true });
   }
   if (who.role !== 'team') throw new GameError('Chybí přístupový klíč výpravy.', 403);

@@ -1,52 +1,39 @@
-export async function preparePhoto(file, {
-  maxSize = 8 * 1024 * 1024,
-  maxDimension = 1280,
-  quality = 0.72,
-} = {}) {
-  if (!file) {
-    const error = new Error("NO_FILE");
-    error.code = "NO_FILE";
-    throw error;
-  }
-
-  if (!file.type.startsWith("image/")) {
-    const error = new Error("INVALID_TYPE");
-    error.code = "INVALID_TYPE";
-    throw error;
-  }
-
-  if (file.size > maxSize) {
-    const error = new Error("FILE_TOO_LARGE");
-    error.code = "FILE_TOO_LARGE";
-    throw error;
-  }
-
-  const dataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error || new Error("READ_FAILED"));
-    reader.readAsDataURL(file);
-  });
-
+import { compressPhoto, PHOTO_VERSION } from './photoCompression.mjs';
+async function prepareSource(source) {
   const image = await new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("IMAGE_LOAD_FAILED"));
-    img.src = dataUrl;
+    const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(Error('Fotografii nelze načíst. Zkuste JPEG, PNG nebo WebP.')); img.src = source;
   });
-
-  const scale = Math.min(
-    1,
-    maxDimension / Math.max(image.width, image.height)
-  );
-
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(image.width * scale);
-  canvas.height = Math.round(image.height * scale);
-
-  const context = canvas.getContext("2d");
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-  return canvas.toDataURL("image/jpeg", quality);
+  const canvas = document.createElement('canvas'), context = canvas.getContext('2d');
+  if (!context) throw Error('Prohlížeč neumí zpracovat fotografii.');
+  try {
+    return await compressPhoto((size, type, quality) => {
+      canvas.width = size.width; canvas.height = size.height;
+      context.fillStyle = '#fff'; context.fillRect(0, 0, size.width, size.height);
+      context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high';
+      context.drawImage(image, 0, 0, size.width, size.height);
+      return canvas.toDataURL(type, quality);
+    }, image.naturalWidth || image.width, image.naturalHeight || image.height);
+  } finally { canvas.width = 1; canvas.height = 1; }
 }
-
+export async function preparePhoto(file, { maxSize = 25 * 1024 * 1024 } = {}) {
+  if (!file) throw Object.assign(Error('NO_FILE'), { code: 'NO_FILE' });
+  if (!file.type.startsWith('image/')) throw Error('Vyberte fotografii, ne jiný typ souboru.');
+  if (file.size > maxSize) throw Error('FILE_TOO_LARGE');
+  const source = URL.createObjectURL(file);
+  try { return await prepareSource(source); } finally { URL.revokeObjectURL(source); }
+}
+export async function optimizeDraftPhotos(draft) {
+  const stations = [];
+  // Process sequentially so a 50-stop expedition does not decode all images at once.
+  for (const station of draft.stations) {
+    const hints = [];
+    for (const hint of station.hints || []) {
+      if (hint.type !== 'photo' || hint.photoVersion === PHOTO_VERSION) { hints.push(hint); continue; }
+      const optimized = await prepareSource(hint.content);
+      // Existing small photos must never get larger just because the game was saved.
+      hints.push({ ...hint, content: optimized.length < hint.content.length ? optimized : hint.content, photoVersion: PHOTO_VERSION });
+    }
+    stations.push({ ...station, hints });
+  }
+  return { ...draft, stations };
+}

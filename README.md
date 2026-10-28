@@ -30,3 +30,9 @@ Starou verzi Sites zachovat do ověřeného exportu/importu produkční D1 a R2 
 
 Node 22, `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run build`, `npm run worker:check`.
 `worker:check` nyní ověřuje i skutečné zabalení všech závislostí Workeru, ne jen TypeScript. Integrační testy účtů používají tentýž serverový modul nad dočasnou SQLite databází; e-maily v testech zachytí paměťová náhrada, nikomu se neposílají. Doručování přes skutečné SMTP čeká na konfiguraci.
+
+## Fotografie nápověd
+
+Nové soubory do 25 MiB se před odesláním překódují přes canvas (bez metadat), přednostně do WebP, s JPEG fallbackem. Delší strana je nejvýše 1280 px, cílová velikost 100 KiB a pevný limit 180 KiB. Kvalita neklesá pod 0,72; složitější obrázek může využít rezervu velikosti místo zbytečného zmenšování textu. Starší snímky se optimalizují při dalším uložení upravitelné výpravy a jen pokud je výsledek menší. Již optimalizované fotografie se opakovaně nepřekódují. Nejde o hromadnou migraci stávajícího R2 ani zásah do probíhajících her.
+
+Při opakovaném uložení se identické fotografie ověřují hashem a vlastní původní referencí výpravy a znovu nenahrávají. Nahrazené objekty dané výpravy se uklízejí až po úspěšném CAS zápisu do D1; cizí prefixy se nemažou. Starší osiřelé objekty z dřívějších verzí nejsou touto změnou hromadně odstraněny.
