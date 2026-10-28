@@ -44,6 +44,7 @@ export async function removeExpedition(db,bucket,{code,userId,version,confirmati
   ...(hasReviews?[db.prepare('DELETE FROM patrac_public_reviews WHERE code=? AND '+guard).bind(code,code,userId,revision)]:[]),
   ...(hasAttempts?[db.prepare('DELETE FROM patrac_public_attempts WHERE code=? AND '+guard).bind(code,code,userId,revision)]:[]),
   db.prepare('DELETE FROM patrac_teams WHERE code=? AND '+guard).bind(code,code,userId,revision),
+  ...(typeof JSON.parse(row.payload).adminDeletion==='string'?[db.prepare("UPDATE patrac_admin_audit SET status='success' WHERE id=? AND target_id=? AND action='delete-expedition' AND json_extract(details,'$.code')=? AND "+guard).bind(JSON.parse(row.payload).adminDeletion,userId,code,code,userId,revision)]:[]),
   db.prepare("DELETE FROM patrac_creator_games WHERE code=? AND creator_id=? AND EXISTS(SELECT 1 FROM patrac_expeditions WHERE code=? AND version=? AND json_extract(payload,'$.status')='deleting')").bind(code,userId,code,revision),
   db.prepare("DELETE FROM patrac_expeditions WHERE code=? AND owner_hash=? AND version=? AND json_extract(payload,'$.status')='deleting' AND NOT EXISTS(SELECT 1 FROM patrac_creator_games WHERE code=?)").bind(code,row.owner_hash,revision,code),
  ]);

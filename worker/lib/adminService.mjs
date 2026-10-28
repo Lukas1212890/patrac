@@ -1,11 +1,12 @@
 import { addMonths } from './billing.mjs';
+import {deleteAsAdmin} from './adminExpeditionDeletion.mjs';
 export class AdminError extends Error {
   constructor(message, status = 400, code = 'ADMIN_ERROR') { super(message); this.status = status; this.code = code; }
 }
 const FIELDS = 'id, name, email, emailVerified, createdAt, updatedAt';
 const FRESH_MS = 15 * 60 * 1000;
 const safeUser = u => ({ ...u, emailVerified: !!u.emailVerified });
-export function createAdminService({ db, getSession, sendReset, sendVerification, billingMode = '', now = Date.now }) {
+export function createAdminService({ db, bucket, getSession, sendReset, sendVerification, billingMode = '', now = Date.now }) {
   async function requireAdmin(request, write = false) {
     const session = await getSession(request);
     if (!session?.user?.emailVerified) throw new AdminError('Přihlaste se ke správcovskému účtu.', 401, 'ADMIN_LOGIN_REQUIRED');
@@ -89,15 +90,16 @@ export function createAdminService({ db, getSession, sendReset, sendVerification
     },
     async detail(request, id) {
       await requireAdmin(request); const user = await target(id);
-      const games = await db.prepare(`SELECT e.code,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.status') AS status
-        FROM patrac_creator_games g JOIN patrac_expeditions e ON e.code = g.code WHERE g.creator_id = ? ORDER BY g.linked_at DESC LIMIT 100`).bind(id).all();
+      const games = await db.prepare(`SELECT e.code,e.version,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.status') AS status,json_extract(e.payload,'$.adminDeletion') AS deleteOperation,a.details AS deletionDetails
+        FROM patrac_creator_games g JOIN patrac_expeditions e ON e.code = g.code LEFT JOIN patrac_admin_audit a ON a.id=json_extract(e.payload,'$.adminDeletion') WHERE g.creator_id = ? ORDER BY g.linked_at DESC LIMIT 100`).bind(id).all();
       const audit = await db.prepare(`SELECT a.action,a.status,a.created_at,a.details,u.email AS actor FROM patrac_admin_audit a
         LEFT JOIN patrac_auth_user u ON u.id = a.actor_id WHERE a.target_id = ? ORDER BY a.created_at DESC LIMIT 20`).bind(id).all();
-      return { user: safeUser(user), games: games.results, audit: audit.results, billing: await billingDetail(id) };
+      return { user: safeUser(user), games: games.results.map(({deleteOperation,deletionDetails,...game})=>({...game,...(deleteOperation&&deletionDetails?{deletion:{requestKey:deleteOperation.replace(/^admin-delete_/,''),reason:JSON.parse(deletionDetails).reason}}:{})})), audit: audit.results, billing: await billingDetail(id) };
     },
     async change(request, input) {
       const actor = await requireAdmin(request, true), user = await target(input.id), action = input.action;
       if (action === 'access') return grantAccess(actor,user,input);
+      if (action === 'delete-expedition') return deleteAsAdmin({db,bucket,actor,user,input,now,ErrorType:AdminError});
       if (!['update','reset','verify','revoke'].includes(action)) throw new AdminError('Neznámá akce.');
       let name = user.name, email = user.email, emailChanged = false;
       if (action === 'update') {

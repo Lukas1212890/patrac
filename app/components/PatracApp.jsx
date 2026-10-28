@@ -9,6 +9,8 @@ import CreatorHub from './CreatorHub';
 import PlayLibrary from './PlayLibrary';
 import CommunityRankings from './CommunityRankings';
 import CreatorRewardNotice from './CreatorRewardNotice';
+import CreatorNotices from './CreatorNotices';
+import useCreatorNotices from './useCreatorNotices';
 import {publicRequest} from '../lib/public-client';
 import {checkPrivateHistory,mergePrivateHistory} from '../lib/privateHistory.mjs';
 import PatracEditor from './PatracEditor';
@@ -41,6 +43,7 @@ function Progress({ index, total }) { return <div className="p-progress" role="p
 
 export default function PatracApp() {
   const account = useCreatorAccount();
+  const notices=useCreatorNotices(account.user?.id);
   const [accountGames, setAccountGames] = useState([]);
   useEffect(() => {
     if (!account.user) { setAccountGames([]); return; }
@@ -79,7 +82,7 @@ export default function PatracApp() {
   useEffect(() => { if (!account.loading && !account.user && ['owner','public'].includes(session?.role)) home(); }, [account.user?.id, account.loading, session?.role]);
   const refresh = useCallback(async () => {
     const s = currentSession.current; if (!s || !navigator.onLine) return;
-    try { const value = s.role==='public'?await publicRequest('/expeditions/'+s.code+'/play'):await request('/' + s.code, s.token); if (currentSession.current !== s) return; if (value.role !== (s.role==='public'?'team':s.role)) throw Error('Přístupový klíč není platný. Obnovte přístup ze zálohy.'); offset.current = value.now - Date.now(); setData(old => !old || value.now >= old.now ? value : old); setError(''); } catch (e) { if(currentSession.current!==s)return; if(s.role==='public'&&[401,402].includes(e.status)){currentSession.current=null;setSession(null);setData(null);setView('account');} if ([404,410].includes(e.status)) { forgetUnavailable(s); currentSession.current=null;setSession(null);setData(null);setView('removed'); } setError(e.name === 'TimeoutError' ? 'Server neodpovídá. Průběh zůstává uložený; zkuste obnovit spojení.' : e.message); }
+    try { const value = s.role==='public'?await publicRequest('/expeditions/'+s.code+'/play'):await request('/' + s.code, s.token); if (currentSession.current !== s) return; if (value.role !== (s.role==='public'?'team':s.role)) throw Error('Přístupový klíč není platný. Obnovte přístup ze zálohy.'); offset.current = value.now - Date.now(); setData(old => !old || value.now >= old.now ? value : old); setError(''); } catch (e) { if(currentSession.current!==s)return; if(s.role==='public'&&[401,402].includes(e.status)){currentSession.current=null;setSession(null);setData(null);setView('account');} if ([404,410].includes(e.status)) { if(s.role==='owner')window.dispatchEvent(new Event('patrac-notices-refresh')); forgetUnavailable(s); currentSession.current=null;setSession(null);setData(null);setView('removed'); } setError(e.name === 'TimeoutError' ? 'Server neodpovídá. Průběh zůstává uložený; zkuste obnovit spojení.' : e.message); }
   }, []);
   useEffect(() => { if (!session) return; refresh(); const interval = setInterval(() => { if (!document.hidden) refresh(); }, 5000); const resume = () => { if (!document.hidden) refresh(); }; window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume); window.addEventListener('pageshow', resume); return () => { clearInterval(interval); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); window.removeEventListener('pageshow', resume); }; }, [session?.code, session?.token, refresh]);
   function home() { setRewardNotice(false); currentSession.current = null; setSession(null); setData(null); setError(''); setView('home'); setResumeOpen(false); history.replaceState(null, '', '/'); }
@@ -141,11 +144,12 @@ export default function PatracApp() {
   const now = clock + offset.current;
   return <div className={'p-app p-view-' + view + (!account.user ? ' p-guest' : '')}>
     <header className="p-header"><Brand home={home}/><div className="p-header-actions"><span className="p-desktop-label">Dobrodružství začíná venku.</span><button className="p-icon-button" aria-label="Jak se hraje" onClick={() => setHelp(true)}><HelpCircle size={21}/></button><button className="p-icon-button" aria-label={account.user ? "Můj profil" : "Přihlášení"} onClick={() => setView('account')}><UserRound size={20}/></button>{session && <button className="p-icon-button" aria-label="Obnovit průběh" onClick={refresh}><RefreshCw size={19}/></button>}</div></header>
+    {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onOpenGames={()=>navigate('library')}/>}
     {!online && <div className="p-connection" role="status">Jste offline. Čas běží dál. Hra se připojí, jakmile bude signál.</div>}
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
     {view === 'home' && <CommunityMap onSelect={showPublic} onJoin={()=>navigate('join')}/>}
     {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>navigate('account')} onStarted={enter}/>}
-    {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team')} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
+    {view==='library'&&<PlayLibrary user={account.user} notices={notices} saved={saved.filter(s=>s.role==='team')} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
     {view==='rankings'&&<CommunityRankings user={account.user} tab={rankingTab} onTabChange={setRankingTab} onGames={()=>navigate('library')} onSelect={showPublic} onAccount={()=>navigate('account')} onMap={home}/>}
     {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={visibility=>visibility==='public'?setRewardNotice(true):openEditor('private')} onGames={()=>navigate('library')}/>}
     {view==='creator'&&rewardNotice&&<CreatorRewardNotice onClose={()=>setRewardNotice(false)} onContinue={()=>{setRewardNotice(false);openEditor('public');}}/>}

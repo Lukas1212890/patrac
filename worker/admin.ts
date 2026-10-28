@@ -5,6 +5,7 @@ import { createAdminService, AdminError } from './lib/adminService.mjs';
 const APP = 'https://patrac.stopik.cz';
 const service = () => createAdminService({
   db: env.DB,
+  bucket: env.BUCKET,
   billingMode: env.PATRAC_BILLING_ENABLED === 'true' ? billingEnvironment(env) : '',
   getSession: async (request: Request) => {
     const token = request.headers.get('x-patrac-account');

@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import {creatorNotices} from './lib/creatorNotices.mjs';
 import { creatorIdentity } from './lib/creator-server';
 import { json, body, errorResponse } from './lib/patrac-server';
 import { EXPEDITION_LIMIT, PUBLIC_EXPEDITION_LIMIT, expeditionCount, expeditionCountSQL } from './lib/expeditionLifecycle.mjs';
@@ -27,3 +28,5 @@ export async function POST(request: Request) {
     return json({ ok: true, linked, limitReached });
   } catch (e) { return errorResponse(e); }
 }
+
+export async function notices(request:Request){const who=await creatorIdentity(request,true);return json(await creatorNotices(env.DB,who!.id));}
