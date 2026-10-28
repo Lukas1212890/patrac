@@ -16,7 +16,7 @@ export async function requirePublicAccess(db,env,userId,stamp=Date.now()){const 
 const CARD=`${routeEstimateSQL} AS routePayload,e.code,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.publicInfo.description') AS description,
  json_extract(e.payload,'$.publicInfo.difficulty') AS difficulty,json_extract(e.payload,'$.publicInfo.distanceKm') AS distanceKm,
  json_extract(e.payload,'$.publicInfo.estimatedMinutes') AS estimatedMinutes,json_extract(e.payload,'$.stations[0].lat') AS lat,
- json_extract(e.payload,'$.stations[0].lng') AS lng,json_array_length(json_extract(e.payload,'$.stations')) AS totalStations,
+ json_extract(e.payload,'$.stations[0].radius') AS startRadius,json_extract(e.payload,'$.stations[0].lng') AS lng,json_array_length(json_extract(e.payload,'$.stations')) AS totalStations,
  substr(u.name,1,60) AS author,c.creator_id AS ownerId`;
 const PUBLIC="json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.published')=1 AND json_extract(e.payload,'$.status')='running'";
 const BASE='FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code JOIN patrac_auth_user u ON u.id=c.creator_id';

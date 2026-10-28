@@ -7,7 +7,7 @@ import NoticeBadge from './NoticeBadge';
 import RouteEstimateNote from './RouteEstimateNote';
 import {formatRouteDistance} from '../../shared/routeEstimate.mjs';
 import CommunityMap from './CommunityMap';
-import PublicExpeditionDetail from './PublicExpeditionDetail';
+import PublicExpeditionDetail, {StartConfirmation} from './PublicExpeditionDetail';
 import CreatorHub from './CreatorHub';
 import PlayLibrary from './PlayLibrary';
 import CommunityRankings from './CommunityRankings';
@@ -54,7 +54,9 @@ export default function PatracApp() {
     return () => { active = false; };
   }, [account.user?.id]);
   useEffect(() => { if (account.recovery) setView('account'); }, [account.recovery]);
+  const [preparation,setPreparation]=useState(null);
   const [view, setView] = useState('home'), [publicCode,setPublicCode]=useState(null), [publicBack,setPublicBack]=useState('home'), [rankingTab,setRankingTab]=useState('expeditions'), [rewardNotice,setRewardNotice]=useState(false), [creationVisibility,setCreationVisibility]=useState('private'), [session, setSession] = useState(null), [data, setData] = useState(null), [saved, setSaved] = useState([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [online, setOnline] = useState(true), [clock, setClock] = useState(Date.now()), [editInitial, setEditInitial] = useState(null), [editVersion, setEditVersion] = useState(null), [code, setCode] = useState(''), [help, setHelp] = useState(false), [resumeOpen, setResumeOpen] = useState(false);
+  useEffect(()=>{if(view==='public-prepare'&&!account.loading&&!account.user)home();},[view,account.loading,account.user?.id]);
   useEffect(()=>{if(view==='account'&&account.user)notificationState.refresh();},[view,account.user?.id,notificationState.refresh]);
   const currentSession = useRef(null), offset = useRef(0), inFlight = useRef(false);
   const validatePrivateHistory=useCallback(async signal=>{
@@ -156,7 +158,8 @@ export default function PatracApp() {
     {!online && <div className="p-connection" role="status">Jste offline. Čas běží dál. Hra se připojí, jakmile bude signál.</div>}
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
     {view === 'home' && <CommunityMap onSelect={showPublic} onJoin={()=>navigate('join')}/>}
-    {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>navigate('account')} onStarted={enter}/>}
+    {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>navigate('account')} onStarted={enter} onPrepare={expedition=>{setPreparation(expedition);setView('public-prepare');}}/>}
+    {view==='public-prepare'&&preparation&&account.user&&<PublicPreparation key={preparation.code+account.user.id} expedition={preparation} user={account.user} online={online} onStarted={enter} onBack={()=>setView('public-detail')}/>}
     {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team'&&(!s.userId||s.userId===account.user?.id))} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
     {view==='rankings'&&<CommunityRankings user={account.user} tab={rankingTab} onTabChange={setRankingTab} onGames={()=>navigate('library')} onSelect={showPublic} onAccount={()=>navigate('account')} onMap={home}/>}
     {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={visibility=>visibility==='public'?setRewardNotice(true):openEditor('private')} onGames={()=>navigate('library')}/>}
@@ -195,7 +198,30 @@ function Owner({ data, now, busy, online, onAction, onEdit, onDelete, onShowPubl
   </main>;
 }
 
-function Player({ data, now, busy, online, onAction, onBackup }) {
+function PublicPreparation({expedition,user,online,onStarted,onBack}) {
+  const [card,setCard]=useState(expedition),[error,setError]=useState(''),[busy,setBusy]=useState(false),[confirm,setConfirm]=useState(false),[available,setAvailable]=useState(false);
+  const starting=useRef(false);
+  useEffect(()=>{
+    const controller=new AbortController();
+    const refresh=async()=>{if(document.hidden||starting.current)return;try{
+      const detail=await publicRequest('/expeditions/'+expedition.code,undefined,controller.signal);
+      if(controller.signal.aborted)return;
+      if(detail.attempt){onStarted({role:'public',code:expedition.code,name:detail.expedition.name});return;}
+      setCard(detail.expedition);setAvailable(detail.access.active&&!detail.isAuthor);setError(detail.access.active?'':'Pro zahájení je potřeba aktivní předplatné.');
+    }catch(e){if(!controller.signal.aborted){setAvailable(false);setError(e.message);}}};
+    refresh();const timer=setInterval(refresh,15000);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);
+    return()=>{controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
+  },[expedition.code,user.id,onStarted]);
+  async function start(){
+    if(starting.current||!online)return;starting.current=true;setBusy(true);setError('');
+    try{await publicRequest('/expeditions/'+card.code+'/start',{confirm:true});await onStarted({role:'public',code:card.code,name:card.name});}
+    catch(e){setError(e.message);setConfirm(false);}finally{starting.current=false;setBusy(false);}
+  }
+  const data={game:{name:card.name,status:'running',mode:'race',totalStations:card.totalStations,visibility:'public'},team:{name:user.name,index:0,penaltyMs:0,station:{name:'Start: '+card.name,lat:card.lat,lng:card.lng,radius:card.startRadius??25}}};
+  return <>{error&&<div className="p-alert" role="alert">{error}</div>}<Player data={data} preparing now={0} busy={busy||!available} online={online} onStart={()=>setConfirm(true)} onBackup={onBack}/>{confirm&&<StartConfirmation busy={busy} onStart={start} onClose={()=>setConfirm(false)}/>}</>;
+}
+
+function Player({ data, now, busy, online, onAction, onBackup, preparing=false, onStart }) {
   const { game, team, counts } = data; const running = game.status === 'running' && !team.finishedAt;
   const { position, error, retry } = usePatracPosition(running), [answer, setAnswer] = useState(''), [hint, setHint] = useState(null), [heading, setHeading] = useState(null), [orientationError, setOrientationError] = useState(''), [compassPermission, setCompassPermission] = useState('unknown');
   const attempted = useRef({ key: '', at: 0 }), station = team.station;
@@ -211,15 +237,15 @@ function Player({ data, now, busy, online, onAction, onBackup }) {
   }
   const distance = position && station ? distanceTo(position, station) : null;
   useEffect(() => {
-    if (!position || !station || team.arrivedAt || busy || !online || (position.samples < 2 && position.acc > 10) || position.acc > Math.min(30, station.radius) || distance > station.radius || Date.now() - position.timestamp > 20000) return;
+    if (preparing || !position || !station || team.arrivedAt || busy || !online || (position.samples < 2 && position.acc > 10) || position.acc > Math.min(30, station.radius) || distance > station.radius || Date.now() - position.timestamp > 20000) return;
     const key = `${team.index}:${position.timestamp}`; if (attempted.current.key === key || Date.now() - attempted.current.at < 4000) return;
     const fix = position.arrivalFix || position;
     attempted.current = { key, at: Date.now() }; onAction({ action: 'arrive', index: team.index, position: { ...fix, timestamp: fix.timestamp + (now - Date.now()) } });
-  }, [position, team.index, team.arrivedAt, busy, online, station, distance]);
+  }, [preparing, position, team.index, team.arrivedAt, busy, online, station, distance]);
   if (game.status === 'waiting') return <main className="p-narrow"><div className="p-panel p-lobby"><div className="p-crest large"><Users/></div><span className="p-kicker">HRÁČ {team.name}</span><h1>Vaše výprava brzy začne.</h1>{game.routeInfo&&<><p>{formatRouteDistance(game.routeInfo)} vzdušnou čarou · přibližně {game.routeInfo.estimatedMinutes} min</p><RouteEstimateNote info={game.routeInfo}/></>}<p>Organizátor odstartuje všechny hráče současně. Nechte tuto obrazovku otevřenou.</p><div className="p-lobby-pulse"><span/> Čekáme na start</div><p className="p-small">Připojeno hráčů: {counts?.total || 1} · Kód {game.code}</p><button className="p-text-button" onClick={onBackup}><Download size={16}/> Moje hry</button></div></main>;
-  const elapsed = (team.finishedAt || now) - game.startedAt, total = elapsed + (game.mode === 'race' ? team.penaltyMs : 0);
+  const elapsed = preparing ? 0 : (team.finishedAt || now) - game.startedAt, total = elapsed + (game.mode === 'race' ? team.penaltyMs : 0);
   if (team.finishedAt) return <main className="p-narrow"><div className="p-panel p-finish"><Trophy className="p-big-icon"/><span className="p-kicker">VÝPRAVA DOKONČENA</span><h1>{team.name}, jste v cíli!</h1><p>{game.visibility==='public'?'Váš jediný pokus je dokončený. Výsledný čas včetně penalizací je uložený a můžete se podívat do žebříčku TOP 10.':game.mode === 'race' ? 'Vaše šifry jsou vyřešené. Pořadí vyhodnotí organizátor podle výsledných časů všech hráčů.' : 'Poklad je nalezený. Organizátor vidí pořadí hráčů podle dokončení.'}</p><div className="p-score"><span>Výsledný čas</span><strong>{time(total)}</strong><small>Čas hry {time(elapsed)}{game.mode === 'race' ? ' + penalizace ' + time(team.penaltyMs) : ''}</small></div><p className="p-small">Dokončeno hráčů {counts?.finished || 1} z {counts?.total || 1}</p><button className="p-secondary" onClick={onBackup}><Download size={17}/> {game.visibility==='public'?'Zobrazit žebříček TOP 10':'Moje hry'}</button></div></main>;
-  if (!team.arrivedAt && station) return <TravelScreen game={game} team={team} position={position} heading={heading} error={error} orientationError={orientationError} compassPermission={compassPermission} elapsed={elapsed} total={total} onEnableCompass={enableCompass} onRetry={retry}/>;
+  if (!team.arrivedAt && station) return <TravelScreen game={game} team={team} position={position} heading={heading} error={error} orientationError={orientationError} compassPermission={compassPermission} elapsed={elapsed} total={total} onEnableCompass={enableCompass} onRetry={retry} preparing={preparing} onStart={onStart} startDisabled={busy || !online} onBack={onBackup}/>;
   return <main className="p-content p-player"><div className="p-player-top"><span className="p-badge"><Users size={16}/> {team.name}</span><span className="p-badge p-clock"><Clock3 size={16}/>{time(elapsed)}</span></div><div className="p-player-heading"><span className="p-kicker">{game.name}</span><Progress index={team.index} total={game.totalStations}/><p className="p-small">Stanoviště {team.index + 1} / {game.totalStations}</p><h1>{station?.name}</h1></div>
     {team.arrivedAt && station && <section className="p-panel p-riddle"><span className="p-arrived"><LocateFixed size={17}/> Jste na místě</span><div className="p-parchment"><Compass size={30}/><p>{station.question}</p></div><form onSubmit={async e => { e.preventDefault(); const result = await onAction({ action: 'answer', index: team.index, answer }); if (result?.ok && !result.wrongAnswer) setAnswer(''); }}><label className="p-label">Vaše odpověď<input autoComplete="off" value={answer} required maxLength={1000} onChange={e => setAnswer(e.target.value)} placeholder="Napište řešení…"/></label><button className="p-primary" disabled={busy || !online}><LockKeyhole size={18}/>{busy ? 'Ověřuji…' : team.index === game.totalStations - 1 ? 'Potvrdit poslední odpověď' : 'Odemknout další souřadnice'}</button></form>
       {game.mode === 'race' && station.hints?.length > 0 && <div className="p-hints"><h3>Potřebujete postrčit?</h3>{station.hints.map(h => <div className="p-hint-item" key={h.id}>{h.content ? h.type === 'photo' ? <img className="p-hint-photo" src={h.content} alt="Odemčená fotografická nápověda"/> : <p className="p-revealed-hint">{h.content}</p> : <button className="p-secondary" disabled={busy || !online} onClick={() => setHint(h)}>{h.type === 'photo' ? <ImageIcon size={20}/> : <Lightbulb size={20}/>} {h.type === 'photo' ? 'Fotografická' : 'Textová'} nápověda <span className="p-gold">+{h.minutes} min</span></button>}</div>)}</div>}{game.mode === 'race' && <div className="p-hints">{station.solution ? <div className="p-revealed-hint"><strong>Řešení</strong><p>{station.solution}</p><small>Zadejte odpověď a pokračujte na další stanoviště.</small></div> : <button className="p-secondary" disabled={busy || !online} onClick={() => setHint({ solution: true, minutes: station.solutionMinutes ?? 30 })}>Zobrazit řešení <span className="p-gold">+{station.solutionMinutes ?? 30} min</span></button>}</div>}{game.mode === 'treasure' && <p className="p-small">Hon za pokladem · hrajete bez nápověd.</p>}

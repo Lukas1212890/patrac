@@ -155,3 +155,25 @@ test('personal rankings paginate and show the real position beyond TOP 10; missi
  const actual=[...first.items,...last.items].find(i=>i.code==='ABCDEFG');assert.equal(actual.rank,25);assert.equal(actual.finishers,25);assert.equal(first.items[0].code,'ABCDEFG');assert.equal((await rankings.overview(null)).activePlayers.length,20);
  f.native.exec('DROP TABLE patrac_public_attempts');assert.equal((await rankings.overview(null)).ready,false);f.native.close();
 });
+
+test('navigation to the public start consumes no attempt or time; explicit start counts time before arrival',async()=>{
+ const f=fixture();try{
+ await f.add('ABCDEFG');const before=f.now();
+ for(let i=0;i<3;i++){
+  const detail=await f.api.detail('ABCDEFG',f.users.alice);
+  assert.equal(detail.attempt,null);assert.equal(detail.expedition.lat,49.3);assert.equal(detail.expedition.startRadius,25);
+  assert.equal(JSON.stringify(detail).includes('secret answer'),false);
+  f.tick(600000);
+ }
+ assert.equal((await f.api.history(f.users.alice)).attempts.length,0);
+ await assert.rejects(()=>f.api.play('ABCDEFG',f.users.alice,{action:'arrive',index:0,position:{lat:49.3,lng:17.39,acc:5,timestamp:f.now()}}));
+ const start=await f.api.start('ABCDEFG',f.users.alice,true);
+ assert.equal(start.attempt.startedAt,before+1800000);assert.equal(start.attempt.totalMs,0);
+ f.tick(120000);
+ const travelling=await f.api.play('ABCDEFG',f.users.alice);
+ assert.equal(travelling.team.elapsedMs,120000);assert.equal(travelling.team.station.question,undefined);
+ await f.api.play('ABCDEFG',f.users.alice,{action:'arrive',index:0,position:{lat:49.3,lng:17.39,acc:5,timestamp:f.now()}});
+ assert.equal((await f.api.play('ABCDEFG',f.users.alice)).team.station.question,'Secret riddle');
+ assert.equal((await f.api.start('ABCDEFG',f.users.alice,true)).attempt.startedAt,start.attempt.startedAt);
+ }finally{f.native.close();}
+});
