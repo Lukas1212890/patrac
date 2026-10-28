@@ -8,7 +8,7 @@ export async function sendAccountMail(to: string, subject: string, text: string)
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.PATRAC_AUTH_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const signature = Array.from(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(timestamp + '.' + body))), n => n.toString(16).padStart(2, '0')).join('');
   let response: Response;
-  try { response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Patrac-Timestamp': timestamp, 'X-Patrac-Signature': signature }, body, signal: AbortSignal.timeout(15000), redirect: 'error' }); }
+  try { response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Patrac-Timestamp': timestamp, 'X-Patrac-Signature': signature }, body, signal: AbortSignal.timeout(15000), redirect: 'manual' }); }
   catch (error: unknown) { console.error('patrac_mail_relay', (error as { name?: string })?.name === 'TimeoutError' ? 'RELAY_TIMEOUT' : 'RELAY_CONNECTION_FAILED'); throw new APIError('SERVICE_UNAVAILABLE', { message: 'E-mail se nepodařilo odeslat.', code: 'RELAY_CONNECTION_FAILED' }); }
   if (!response.ok) {
     const result = await response.json().catch(() => null) as { code?: string } | null;
