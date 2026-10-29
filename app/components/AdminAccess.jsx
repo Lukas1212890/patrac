@@ -1,5 +1,5 @@
 'use client';
-import AdminSubscriptionSummary,{accessMonths,accessSource} from './AdminSubscriptionSummary';
+import AdminSubscriptionSummary,{accessMonths,AdminAccessTags} from './AdminSubscriptionSummary';
 import {useRef,useState} from 'react';
 const date=value=>value?new Date(value).toLocaleString('cs-CZ',{dateStyle:'medium',timeStyle:'short'}):'—';
 export default function AdminAccess({billing,userId,busy,onChange}){
@@ -25,7 +25,7 @@ export default function AdminAccess({billing,userId,busy,onChange}){
  <button className="pa-primary" disabled={busy}>{busy?'Ukládám…':(billing.active?'Prodloužit':'Přidělit')+' přístup o '+months+' měsíců'}</button>
  </form>
  <h3>Historie všech přidělených období</h3>
- {billing.subscription?.history?.length?<ul className="pa-payments">{billing.subscription.history.map(item=><li key={item.source+':'+item.reference}><div><strong>{accessSource(item.source,billing.environment)} · {accessMonths(item.months)}</strong></div><small>{item.source==='paid'?'Zaplaceno':'Přiděleno'} {date(item.grantedAt)}</small>{item.source==='paid'&&<small>Částka: {(item.amount/100).toLocaleString('cs-CZ')} Kč</small>}<small>Platnost po tomto prodloužení: {date(item.accessUntil)}</small>{item.reason&&<small>{item.source==='reward'?'Výprava: ':'Důvod: '}{item.reason}</small>}</li>)}</ul>:<p className="pa-muted">Zatím žádné doložené období.</p>}
+ {billing.subscription?.history?.length?<ul className="pa-payments">{billing.subscription.history.map(item=><li key={item.source+':'+item.reference}><div><AdminAccessTags source={item.source} environment={billing.environment} months={item.months}/></div><small>{item.source==='paid'?'Zaplaceno':'Přiděleno'} {date(item.grantedAt)}</small>{item.source==='paid'&&<small>Částka: {(item.amount/100).toLocaleString('cs-CZ')} Kč</small>}<small>Platnost po tomto prodloužení: {date(item.accessUntil)}</small>{item.reason&&<small>{item.source==='reward'?'Výprava: ':'Důvod: '}{item.reason}</small>}</li>)}</ul>:<p className="pa-muted">Zatím žádné doložené období.</p>}
  {billing.subscription?.history?.length===100&&<p className="pa-muted">Zobrazeno posledních 100 období.</p>}
  <h3>Platby a objednávky</h3>
  {!billing.orders.length?<p className="pa-muted">Zatím žádné objednávky. Ručně přidělené období najdete v historii správy.</p>:<ul className="pa-payments">{billing.orders.map(order=><li key={order.id}><div><strong>{accessMonths(order.months)} · {(order.amount/100).toLocaleString('cs-CZ')} Kč</strong><span className={'pa-badge '+(order.paid_at?'verified':'')}>{order.paid_at?'Zaplaceno':'Nezaplaceno'}</span></div><small>Vytvořeno {date(order.created_at)}</small>{order.paid_at&&<><small>Zaplaceno {date(order.paid_at)}</small><small>Platnost po této platbě: {date(order.access_until)}</small></>}</li>)}</ul>}
