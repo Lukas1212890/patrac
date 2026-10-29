@@ -162,7 +162,7 @@ export default function PatracApp() {
   const now = clock + offset.current;
   return <div className={'p-app p-view-' + view + (!account.user ? ' p-guest' : '')}>
     <header className="p-header"><Brand home={home}/><div className="p-header-actions"><span className="p-desktop-label">Dobrodružství začíná venku.</span><button className="p-icon-button" aria-label="Jak se hraje" onClick={() => setHelp(true)}><HelpCircle size={21}/></button><button className="p-icon-button p-profile-button" aria-label={account.user ? "Můj profil"+(notificationState.unreadCount?", nepřečtená oznámení: "+notificationState.unreadCount:"") : "Přihlášení"} onClick={() => setView('account')}><UserRound size={20}/>{account.user&&<NoticeBadge count={notificationState.unreadCount}/>}</button>{(session || view==='public-prepare') && <button className="p-icon-button" aria-label="Menu výpravy" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}><Menu size={21}/></button>}</div></header>
-    {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onRead={notificationState.markRead} onOpenProfile={()=>navigate('account')}/>}
+    {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onRead={notificationState.markRead} saving={notificationState.saving} error={notificationState.error} onOpenProfile={()=>navigate('account')}/>}
     {!online && <div className="p-connection" role="status">Jste offline. Čas běží dál. Hra se připojí, jakmile bude signál.</div>}
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
     {view === 'home' && <CommunityMap key={account.user?.id||'guest'} userId={account.user?.id} onSelect={showPublic} onJoin={()=>navigate('join')}/>}

@@ -1,3 +1,4 @@
+import {noticeReads,markNoticeReads} from './lib/noticeReads.mjs';
 import {billingEnvironment} from './lib/billing.mjs';
 import {accountAuth} from './auth';
 import {availableNickname} from './lib/nicknames.mjs';
@@ -54,5 +55,13 @@ export async function notices(request:Request){
  const result=await creatorNotices(env.DB,who!.id,billingEnvironment(env));
  // Older open clients render every event as deletion. Never send them other event types.
  const format=new URL(request.url).searchParams.get('format');
- return json({format:format==='3'?3:format==='2'?2:1,notices:format==='3'?result.notices:format==='2'?result.notices.filter(n=>!['review','review-reply'].includes(n.type)):result.notices.filter(n=>n.type==='delete-expedition')});
+ const readIds=format==='3'?await noticeReads(env.DB,who!.id,result.notices):[];
+ return json({readIds,format:format==='3'?3:format==='2'?2:1,notices:format==='3'?result.notices:format==='2'?result.notices.filter(n=>!['review','review-reply'].includes(n.type)):result.notices.filter(n=>n.type==='delete-expedition')});
+}
+
+export async function readNotices(request:Request){
+ const who=await creatorIdentity(request,true),input=await body(request);
+ const result=await creatorNotices(env.DB,who!.id,billingEnvironment(env));
+ const readIds=await markNoticeReads(env.DB,who!.id,result.notices,input.readIds);
+ return json({ok:true,readIds});
 }

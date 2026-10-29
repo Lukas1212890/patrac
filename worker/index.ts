@@ -41,6 +41,7 @@ const handler = {
         response = await accountAuth().handler(request);
       }
       else if (path === '/api/account/config' && request.method === 'GET') response = await config.GET();
+      else if (path === '/api/account/notices/read' && request.method === 'POST') response = await account.readNotices(request);
       else if (path === '/api/account/notices' && request.method === 'GET') response = await account.notices(request);
       else if (path === '/api/account' && request.method === 'GET') response = await account.GET(request);
       else if (path === '/api/account' && request.method === 'POST') response = await account.POST(request);
