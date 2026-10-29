@@ -22,8 +22,8 @@ const FINISHED=`WITH finished AS (
 export function createRankingService({db,env}){
  const environment=billingEnvironment(env);
  const activityCTE=FINISHED+`, activity AS (
- SELECT user_id,COUNT(*) AS completed FROM finished GROUP BY user_id
- ), ranked AS (SELECT user_id,completed,DENSE_RANK() OVER(ORDER BY completed DESC) AS rank FROM activity)`;
+ SELECT user_id,COUNT(*) AS completed,MAX(finishedAt) AS reachedAt FROM finished GROUP BY user_id
+ ), ranked AS (SELECT user_id,completed,reachedAt,ROW_NUMBER() OVER(ORDER BY completed DESC,reachedAt ASC,user_id ASC) AS rank FROM activity)`;
  async function ownStats(user){
   const count=await db.prepare(FINISHED+' SELECT COUNT(*) AS completed FROM finished WHERE user_id=?').bind(environment,user.id).first();
   const activity=await db.prepare(activityCTE+' SELECT rank,completed FROM ranked WHERE user_id=?').bind(environment,user.id).first();
@@ -70,7 +70,7 @@ export function createRankingService({db,env}){
   }
   const players=await db.prepare(activityCTE+` SELECT substr(u.name,1,60) AS nickname,r.completed,r.rank,
    CASE WHEN r.user_id=? THEN 1 ELSE 0 END AS isMe FROM ranked r JOIN patrac_auth_user u ON u.id=r.user_id
-   ORDER BY r.completed DESC,u.name COLLATE NOCASE ASC,r.user_id ASC LIMIT 20`).bind(environment,user?.id||'').all();
+   ORDER BY r.rank ASC LIMIT 20`).bind(environment,user?.id||'').all();
   return{ready:true,environment,ratingsReady,limitsReady:await limitsReady(db),rewardsReady:await creatorRewardsReady(db),ratedExpeditions,activePlayers:players.results.map(r=>({...r,isMe:!!r.isMe})),
    creatorRewards:user?await createCreatorRewards({db,env}).summary(user.id):null,
    myExpeditions:user?await authored(user,ratingsReady):null,

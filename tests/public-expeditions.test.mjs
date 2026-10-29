@@ -266,3 +266,29 @@ test('review/reply notifications are atomic, recipient-scoped, idempotent, and l
  assert.equal((await reviews.manage('ABCDEFG',f.users.author)).items[0].stars,4);
  }finally{f.native.close();}
 });
+
+test('activity ties use the time the current completion count was reached, including personal rank',async()=>{
+ const f=fixture();await f.add('ABCDEFG');await f.add('HJKLMNP');
+ f.native.prepare('INSERT INTO patrac_expeditions VALUES(?,?,?,0)').run('QRSTUVX','owner-third',JSON.stringify(f.base));
+ f.native.prepare('INSERT INTO patrac_creator_games VALUES(?,?,?)').run('QRSTUVX','author',f.now());
+ function attempt(code,user,id,finishedAt){
+  f.native.prepare('INSERT INTO patrac_teams VALUES(?,?,?,?,?,0)').run('story-team-'+id,code,'token-'+id,'key-'+id,JSON.stringify({startedAt:f.now(),finishedAt,penaltyMs:0}));
+  f.native.prepare("INSERT INTO patrac_public_attempts VALUES(?,?,?,?,?,'test')").run('activity-'+id,code,user,'story-team-'+id,f.now());
+ }
+ // Alice finished her first game earlier, Bob reached two games earlier.
+ attempt('ABCDEFG','alice','a1',f.now()+1000);attempt('HJKLMNP','alice','a2',f.now()+4000);
+ attempt('ABCDEFG','bob','b1',f.now()+2000);attempt('HJKLMNP','bob','b2',f.now()+3000);
+ const rankings=createRankingService({db:f.db,env:f.env});
+ let overview=await rankings.overview(f.users.alice);
+ assert.deepEqual(overview.activePlayers.map(p=>[p.nickname,p.completed,p.rank]),[['bob',2,1],['alice',2,2]]);
+ assert.equal(overview.myResults.stats.activityRank,2);
+ assert.equal((await rankings.overview(f.users.bob)).myResults.stats.activityRank,1);
+ // Renaming does not change rank, and a larger count takes priority over time.
+ f.native.prepare("UPDATE patrac_auth_user SET name='Aardvark' WHERE id='alice'").run();
+ assert.equal((await rankings.overview(null)).activePlayers[0].nickname,'bob');
+ attempt('QRSTUVX','alice','a3',f.now()+5000);
+ overview=await rankings.overview(f.users.alice);
+ assert.deepEqual(overview.activePlayers.map(p=>[p.nickname,p.completed,p.rank]),[['Aardvark',3,1],['bob',2,2]]);
+ assert.equal(overview.myResults.stats.activityRank,1);
+ f.native.close();
+});
