@@ -1,3 +1,4 @@
+import {subscriptionQuery,subscriptionSummary,subscriptionHistory} from './adminSubscriptions.mjs';
 import {carryAdminAccess} from './adminAccessCarryover.mjs';
 import {activePlayersQuery} from './activeExpeditionPlayers.mjs';
 import {availableNickname} from './nicknames.mjs';
@@ -44,7 +45,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
     const access = await db.prepare('SELECT expires_at,version FROM patrac_access WHERE user_id=? AND environment=?').bind(userId,billingMode).first();
     const orders = await db.prepare('SELECT id,months,amount,created_at,paid_at,access_until FROM patrac_orders WHERE user_id=? AND environment=? ORDER BY created_at DESC LIMIT 50').bind(userId,billingMode).all();
     const liveAccess=billingMode==='test'?await db.prepare("SELECT expires_at FROM patrac_access WHERE user_id=? AND environment='live'").bind(userId).first():access;
-    return {available:true,liveExpiresAt:liveAccess?.expires_at||null,environment:billingMode,expiresAt:access?.expires_at||null,version:access?.version||0,active:(access?.expires_at||0)>now(),orders:orders.results};
+    return {available:true,liveExpiresAt:liveAccess?.expires_at||null,environment:billingMode,expiresAt:access?.expires_at||null,version:access?.version||0,active:(access?.expires_at||0)>now(),orders:orders.results,subscription:await subscriptionHistory(db,userId,billingMode,now())};
   }
   async function grantAccess(actor,user,input) {
     if (!['test','live'].includes(billingMode)) throw new AdminError('Správa přístupu zatím není zapnutá.',503);
@@ -88,13 +89,31 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       const q = String(query.q || '').trim().slice(0, 120), page = Number(query.page || 0);
       if (!Number.isSafeInteger(page) || page < 0 || page > 100000) throw new AdminError('Neplatná stránka.');
       const pattern = '%' + q.replace(/[\\%_]/g, c => '\\' + c) + '%';
-      const where = "WHERE u.email LIKE ? ESCAPE '\\' OR u.name LIKE ? ESCAPE '\\'";
-      const count = await db.prepare(`SELECT COUNT(*) AS total FROM patrac_auth_user u ${where}`).bind(pattern, pattern).first();
-      const stats = await db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(emailVerified),0) AS verified FROM patrac_auth_user').first();
-      const rows = await db.prepare(`SELECT u.id,u.name,u.email,u.emailVerified,u.createdAt,u.updatedAt,
-        (SELECT COUNT(*) FROM patrac_creator_games g WHERE g.creator_id = u.id) AS games
-        FROM patrac_auth_user u ${where} ORDER BY u.createdAt DESC,u.id ASC LIMIT 20 OFFSET ?`).bind(pattern, pattern, page * 20).all();
-      return { users: rows.results.map(safeUser), total: count.total, page, pageSize: 20, stats };
+      const status=String(query.status||'all'),source=String(query.source||'all'),months=String(query.months||'all'),ending=String(query.ending||'all');
+      if(!['all','active','expired','none'].includes(status)||!['all','paid','admin','reward','mixed','unknown'].includes(source)||!['all','2','3','6','12'].includes(months)||!['all','7','30','90'].includes(ending))throw new AdminError('Neplatný filtr přístupu.');
+      const stamp=now(),enabled=['test','live'].includes(billingMode);
+      if(!enabled&&(status!=='all'||source!=='all'||months!=='all'||ending!=='all'))throw new AdminError('Správa přístupu není zapnutá.');
+      const prefix=enabled?await subscriptionQuery(db,billingMode,stamp):{sql:'',bindings:[]};
+      const join=enabled?'LEFT JOIN access_rows a ON a.user_id=u.id LEFT JOIN source_summary s ON s.userId=u.id':'';
+      const filters=["(u.email LIKE ? ESCAPE '\\' OR u.name LIKE ? ESCAPE '\\')"],values=[pattern,pattern];
+      if(status==='active'){filters.push('COALESCE(a.expires_at,0)>?');values.push(stamp);}
+      if(status==='expired'){filters.push('a.expires_at>0 AND a.expires_at<=?');values.push(stamp);}
+      if(status==='none')filters.push('COALESCE(a.expires_at,0)=0');
+      if(source==='mixed')filters.push('s.sourceCount>=2');
+      if(source==='unknown'){filters.push('COALESCE(a.expires_at,0)>? AND COALESCE(s.sourceCount,0)=0');values.push(stamp);}
+      const eventFilters=[];
+      if(['paid','admin','reward'].includes(source)){eventFilters.push('g.source=?');values.push(source);}
+      if(months!=='all'){eventFilters.push('g.months=?');values.push(Number(months));}
+      if(eventFilters.length)filters.push('EXISTS(SELECT 1 FROM relevant g WHERE g.userId=u.id AND '+eventFilters.join(' AND ')+')');
+      if(ending!=='all'){filters.push('a.expires_at>? AND a.expires_at<=?');values.push(stamp,stamp+Number(ending)*86400000);}
+      const where='WHERE '+filters.join(' AND '),bindings=[...prefix.bindings,...values];
+      const count=await db.prepare(prefix.sql+`SELECT COUNT(*) AS total FROM patrac_auth_user u ${join} ${where}`).bind(...bindings).first();
+      const stats=await db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(emailVerified),0) AS verified FROM patrac_auth_user').first();
+      const rows=await db.prepare(prefix.sql+`SELECT u.id,u.name,u.email,u.emailVerified,u.createdAt,u.updatedAt,
+        (SELECT COUNT(*) FROM patrac_creator_games g WHERE g.creator_id=u.id) AS games
+        ${enabled?',a.expires_at,s.sources,s.paidMonths,s.adminMonths,s.rewardMonths':''}
+        FROM patrac_auth_user u ${join} ${where} ORDER BY u.createdAt DESC,u.id ASC LIMIT 20 OFFSET ?`).bind(...bindings,page*20).all();
+      return {users:rows.results.map(row=>{const {expires_at,sources,paidMonths,adminMonths,rewardMonths,...user}=row;return {...safeUser(user),subscription:enabled?subscriptionSummary(row,billingMode,stamp):null};}),total:count.total,page,pageSize:20,stats,billingEnvironment:enabled?billingMode:null};
     },
     async detail(request, id) {
       await requireAdmin(request); const user = await target(id);
