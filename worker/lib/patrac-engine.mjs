@@ -7,6 +7,11 @@ function text(value, max, name) {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max) throw new GameError(`Doplňte ${name} (nejvýše ${max} znaků).`);
   return value.trim();
 }
+function optionalText(value, name) {
+  if (value == null) return '';
+  if (typeof value !== 'string' || value.trim().length > 3000) throw new GameError(`${name}: nejvýše 3000 znaků.`);
+  return value.trim();
+}
 export const PENALTY_OPTIONS = [5, 10, 15, 20, 25, 30];
 export function validateExpedition(input) {
   const name = text(input.name, 100, 'název výpravy');
@@ -30,9 +35,9 @@ export function validateExpedition(input) {
     if (!PENALTY_OPTIONS.includes(solutionMinutes)) throw new GameError('Penalizace za řešení musí být 5, 10, 15, 20, 25 nebo 30 minut.');
     if (hints.length > 5) throw new GameError('Ke stanovišti lze přidat nejvýše pět nápověd.');
     return { id: `s${index}`, name: text(s.name, 100, `název stanoviště ${index + 1}`), ...coords, radius,
-      question: text(s.question, 5000, `hádanku u stanoviště ${index + 1}`), answers, answer: s.answer.trim(), solutionMinutes, hints };
+      arrivalText: optionalText(s.arrivalText, `Popisek stanoviště ${index + 1}`), question: text(s.question, 5000, `hádanku u stanoviště ${index + 1}`), answers, answer: s.answer.trim(), solutionMinutes, hints };
   });
-  return { name, mode: input.mode, stations };
+  return { name, mode: input.mode, finishText: optionalText(input.finishText, 'Závěrečná gratulace'), stations };
 }
 export function checkArrival(position, station, now) {
   const point = parseCoordinates(position);
@@ -93,9 +98,9 @@ export function score(game, team, now) {
 export function teamProjection(game, team, now) {
   team = expireAttempt(game, team, now);
   const station = game.status === 'running' && !team.finishedAt && !team.abandonedAt ? game.stations[team.index] : null;
-  return { ...team, ...score(game, team, now), station: station ? {
+  return { ...team, ...score(game, team, now), ...(team.finishedAt ? { finishText: game.finishText || '' } : {}), station: station ? {
     id: station.id, name: station.name, lat: station.lat, lng: station.lng, radius: station.radius,
-    ...(team.arrivedAt ? { question: station.question, ...(game.mode === 'race' ? { solutionMinutes: station.solutionMinutes ?? 30, ...(team.events.some(e => e.type === 'solution' && e.index === team.index) ? { solution: station.answer.split('\n').find(v => v.trim()).trim() } : {}) } : {}), hints: game.mode === 'race' ? station.hints.map(h => ({
+    ...(team.arrivedAt ? { arrivalText: station.arrivalText || '', question: station.question, ...(game.mode === 'race' ? { solutionMinutes: station.solutionMinutes ?? 30, ...(team.events.some(e => e.type === 'solution' && e.index === team.index) ? { solution: station.answer.split('\n').find(v => v.trim()).trim() } : {}) } : {}), hints: game.mode === 'race' ? station.hints.map(h => ({
       id: h.id, type: h.type, minutes: h.minutes,
       ...(team.events.some(e => e.type === 'hint' && e.index === team.index && e.hintId === h.id) ? { content: h.content } : {}),
     })) : [] } : {}),
