@@ -94,12 +94,12 @@ test('checkout rejects missing, old, or nonboolean consent before contacting Str
 });
 
 test('paid mail retries after failure without granting access twice and includes accepted contract',async()=>{
- const f=fixture(),session=await purchase(f);let attempts=0,body='';
- const api=createBilling({db:f.db,env:f.env,fetcher:async()=>Response.json(session),sendMail:async(to,subject,text)=>{attempts++;assert.equal(to,'user@example.com');body=text;if(attempts===1)throw Error('mail unavailable');}});
+ const f=fixture(),session=await purchase(f);let attempts=0,body='',attachment;
+ const api=createBilling({db:f.db,env:f.env,fetcher:async()=>Response.json(session),sendMail:async(to,subject,text,terms)=>{attachment=terms;attempts++;assert.equal(to,'user@example.com');body=text;if(attempts===1)throw Error('mail unavailable');}});
  await assert.rejects(()=>api.fulfill(session.id),/mail unavailable/);
  assert.equal(f.native.prepare('SELECT version FROM patrac_access').get().version,1);
  await api.fulfill(session.id);await api.fulfill(session.id);assert.equal(attempts,2);assert.equal(f.native.prepare('SELECT version FROM patrac_access').get().version,1);
- assert.match(body,/Vzor oznámení o odstoupení/);assert.match(body,/TESTOVACÍ PLATBA/);assert.ok(body.length<12000);assert.ok(Buffer.byteLength(JSON.stringify({to:'user@example.com',subject:'Potvrzení platby – Pátrač',text:body}))<16000);f.native.close();
+ assert.match(attachment.text,/Vzor oznámení o odstoupení/);assert.equal(attachment.version,LEGAL_VERSION);assert.equal(body.includes(attachment.text),false);assert.match(body,/TESTOVACÍ PLATBA/);assert.ok(body.length<12000);assert.ok(Buffer.byteLength(JSON.stringify({to:'user@example.com',subject:'Potvrzení platby – Pátrač',text:body}))<16000);f.native.close();
 });
 
 test('receipt is never sent for unpaid or mismatched server-verified payment',async()=>{
