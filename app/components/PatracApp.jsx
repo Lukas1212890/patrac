@@ -1,5 +1,6 @@
 'use client';
 import {nextWrongAnswerMessage} from '../lib/wrongAnswerMessages.mjs';
+import HowToPlay from './HowToPlay';
 import PublicationSuccess from './PublicationSuccess';
 import ExpeditionStoryGate from './ExpeditionStoryGate';
 import DeletionCountdown from './DeletionCountdown';
@@ -185,7 +186,7 @@ export default function PatracApp() {
     {['home','library','creator','account','join','public-detail','removed','rankings'].includes(view)&&<nav className="p-bottom-nav" aria-label="Hlavní navigace">{[['home','Mapa',MapTab],['library','Moje hry',Footprints],['creator','Tvořit',Plus],['rankings','Žebříčky',Trophy]].map(([key,label,Icon])=><button key={key} type="button" className={(view===key||(key===publicBack&&view==='public-detail'))?'active':''} aria-current={(view===key||(key===publicBack&&view==='public-detail'))?'page':undefined} onClick={()=>navigate(key)}><Icon size={22}/><span>{label}</span></button>)}</nav>}
     {view === 'demo' && <Demo onBack={home}/>}
     {menuOpen&&<ExpeditionMenu busy={busy} online={online} canAbandon={view==='player'&&data?.game.status==='running'&&!data?.team?.finishedAt&&!data?.team?.abandonedAt} running={view==='player'&&data?.game.status==='running'&&!data?.team?.finishedAt&&!data?.team?.abandonedAt} onClose={()=>setMenuOpen(false)} onNavigate={navigate} onAbandon={async()=>{const result=await action({action:'abandon',confirm:true});if(result?.ok){setMenuOpen(false);navigate('library');}return !!result?.ok;}}/>}
-    {help && <div className="p-modal-backdrop"><section className="p-modal" role="dialog" aria-modal="true" aria-labelledby="p-help-title"><span className="p-kicker">JAK SE HRAJE</span><h2 id="p-help-title">Od první stopy až k pokladu.</h2><ol><li>Organizátor vybere místa a připraví hádanky.</li><li>Přihlášení hráči se připojí kódem a čekají na společný start.</li><li>GPS na místě odemkne hádanku. Správná odpověď odhalí další cíl.</li><li>V závodu se k času přičítají použité nápovědy. V honu za pokladem nápovědy nejsou.</li></ol><p className="p-small">Při externí navigaci se na místě vraťte do Pátrače. Pro ověření příchodu potřebujete polohu a připojení. Za pohybu sledujte okolí a držte se přístupných cest.</p><button className="p-primary" onClick={() => setHelp(false)}>Rozumím, jdeme na to</button></section></div>}
+    {help && <HowToPlay onClose={() => setHelp(false)}/>}
   </div>;
 }
 function MapPinIcon() { return <LocateFixed size={17}/>; }
