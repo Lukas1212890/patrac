@@ -76,5 +76,9 @@ test('Worker moderation enforces reporting and administrator safety actions',asy
   assert.equal((await request('/api/public/expeditions/'+code+'/play',null,tokens.player)).status,200);
   const closed=await request('/api/admin/reports',{id:reports.reports[0].id,resolution:'Prověřeno a opraveno'},tokens.author);assert.equal(closed.status,200);
   assert.equal((await(await request('/api/admin/reports',null,tokens.author)).json()).reports.length,0);
+  const history=await(await request('/api/admin/reports?status=resolved&environment=test',null,tokens.author)).json();assert.equal(history.total,1);assert.equal(history.reports[0].resolvedBy,'author');assert.equal(history.reports[0].resolution,'Prověřeno a opraveno');
+  assert.equal((await(await request('/api/admin/reports?status=resolved&environment=live',null,tokens.author)).json()).total,0);
+  assert.equal((await request('/api/admin/reports?status=wrong',null,tokens.author)).status,400);
+  assert.equal((await request('/api/admin/reports?status=resolved',null,tokens.player)).status,403);
  }finally{await mf.dispose();}
 });

@@ -21,7 +21,18 @@ export async function reportContent({db,env,user,code,input,now=Date.now()}){
  if(!result.meta.changes)throw new GameError('Problém už jste nahlásili, nebo jste dosáhli limitu 10 hlášení za hodinu.',429);
  return{ok:true,message:'Děkujeme. Hlášení bylo předáno správci k posouzení. Při nebezpečí ve hře nepokračujte.'};
 }
-export async function reportsList(db){await moderationReady(db);const r=await db.prepare(`SELECT r.*,u.name AS reporter,c.creator_id AS ownerId,json_extract(e.payload,'$.moderation.reason') AS suspensionReason FROM patrac_content_reports r LEFT JOIN patrac_auth_user u ON u.id=r.user_id LEFT JOIN patrac_creator_games c ON c.code=r.code LEFT JOIN patrac_expeditions e ON e.code=r.code WHERE r.resolved_at IS NULL ORDER BY r.created_at ASC LIMIT 100`).all();return{reports:r.results.map(({snapshot,...r})=>({...r,snapshot:JSON.parse(snapshot)}))};}
+export async function reportsList(db,{status='pending',environment='all',page=0}={}){
+ await moderationReady(db);page=Number(page);
+ if(!['pending','resolved','all'].includes(status)||!['test','live','all'].includes(environment)||!Number.isSafeInteger(page)||page<0||page>100000)throw new GameError('Neplatný filtr hlášení.');
+ const filters=[],values=[];
+ if(status!=='all')filters.push(status==='pending'?'r.resolved_at IS NULL':'r.resolved_at IS NOT NULL');
+ if(environment!=='all'){filters.push('r.environment=?');values.push(environment);}
+ const where=filters.length?'WHERE '+filters.join(' AND '):'';
+ const count=await db.prepare(`SELECT COUNT(*) AS total FROM patrac_content_reports r ${where}`).bind(...values).first();
+ const pending=await db.prepare('SELECT COUNT(*) AS total FROM patrac_content_reports WHERE resolved_at IS NULL').first();
+ const r=await db.prepare(`SELECT r.*,u.name AS reporter,a.name AS resolvedBy,c.creator_id AS ownerId,json_extract(e.payload,'$.moderation.reason') AS suspensionReason FROM patrac_content_reports r LEFT JOIN patrac_auth_user u ON u.id=r.user_id LEFT JOIN patrac_auth_user a ON a.id=r.resolved_by LEFT JOIN patrac_creator_games c ON c.code=r.code LEFT JOIN patrac_expeditions e ON e.code=r.code ${where} ORDER BY ${status==='pending'?'r.created_at ASC':'COALESCE(r.resolved_at,r.created_at) DESC'},r.id ASC LIMIT 25 OFFSET ?`).bind(...values,page*25).all();
+ return{reports:r.results.map(({snapshot,...r})=>({...r,snapshot:JSON.parse(snapshot)})),total:count.total,pending:pending.total,page,pageSize:25,hasMore:(page+1)*25<count.total};
+}
 export async function moderateExpedition({db,actor,user,input,now,ErrorType}){
  if(typeof input.reason!=='string'||input.reason.trim().length<3||input.reason.trim().length>500||!Number.isSafeInteger(input.version))throw new ErrorType('Zadejte důvod (3 až 500 znaků).');
  const row=await db.prepare('SELECT e.* FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND c.creator_id=?').bind(input.code,user.id).first();if(!row)throw new ErrorType('Výprava nebyla nalezena.',404);

@@ -70,3 +70,28 @@ test('comment report snapshot blocks stale removal; moderation preserves stars a
  const notice=(await creatorNotices(f.db,'alice','test')).notices[0];assert.equal(notice.type,'hide-comment');assert.equal(notice.reason,input.reason);
  f.native.close();
 });
+
+test('resolved reports remain searchable with moderator identity; filtering and pagination happen in SQL',async()=>{
+ const f=fixture();await f.add('ABCDEFG');
+ await reportContent({db:f.db,env:f.env,user:f.users.alice,code:'ABCDEFG',input:{kind:'expedition',reason:'danger',description:'První nahlášený problém'},now:f.now()});
+ const report=(await reportsList(f.db)).reports[0];
+ await resolveReport(f.db,{id:report.id,resolution:'Místo prověřeno, přístupná cesta.'},f.now(),'author');
+ const resolved=await reportsList(f.db,{status:'resolved',environment:'test'});
+ assert.equal(resolved.total,1);assert.equal(resolved.reports[0].resolvedBy,'author');assert.match(resolved.reports[0].resolution,/prověřeno/);
+ assert.equal((await reportsList(f.db,{status:'resolved',environment:'live'})).total,0);
+ for(let i=0;i<30;i++)f.native.prepare('INSERT INTO patrac_content_reports(id,user_id,code,environment,kind,reason,description,snapshot,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run('extra-'+i,'alice','ABCDEFG',i%2?'live':'test','expedition','other','Popis problému',JSON.stringify({name:'Výprava'}),f.now()+i);
+ const first=await reportsList(f.db),second=await reportsList(f.db,{page:1});
+ assert.equal(first.total,30);assert.equal(first.pending,30);assert.equal(first.reports.length,25);assert.equal(first.hasMore,true);assert.equal(second.reports.length,5);assert.equal(second.hasMore,false);
+ assert.equal(new Set([...first.reports,...second.reports].map(r=>r.id)).size,30);
+ assert.equal((await reportsList(f.db,{environment:'live'})).total,15);
+ await assert.rejects(()=>reportsList(f.db,{status:'unexpected'}));await assert.rejects(()=>reportsList(f.db,{page:-1}));
+ f.native.close();
+});
+test('players see suspension reason in their own history; unrelated accounts never receive the attempt',async()=>{
+ const f=fixture();await f.add('ABCDEFG');await f.api.start('ABCDEFG',f.users.alice,true);
+ const version=f.native.prepare('SELECT version FROM patrac_expeditions').get().version;
+ await moderateExpedition({db:f.db,actor:{id:'author'},user:{id:'author'},input:{action:'suspend-expedition',code:'ABCDEFG',version,reason:'Uzavřená cesta'},now:f.now,ErrorType:AdminError});
+ assert.equal((await f.api.history(f.users.alice)).attempts[0].suspensionReason,'Uzavřená cesta');
+ assert.equal((await f.api.history(f.users.bob)).attempts.length,0);
+ f.native.close();
+});

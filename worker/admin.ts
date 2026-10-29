@@ -31,7 +31,7 @@ async function readAdminBody(request: Request) {
 export async function adminRequest(request: Request) {
   try {
     const url = new URL(request.url), api = service();
-    if(url.pathname==='/api/admin/reports'){const actor=(await api.session(request,request.method==='POST')).user;if(request.method==='GET')return Response.json(await reportsList(env.DB));if(request.method==='POST'){const input=await readAdminBody(request);return Response.json(input.action==='hide-comment'?await hideReportedComment({db:env.DB,actor,input}):await resolveReport(env.DB,input,Date.now(),actor.id));}}
+    if(url.pathname==='/api/admin/reports'){const actor=(await api.session(request,request.method==='POST')).user;if(request.method==='GET')return Response.json(await reportsList(env.DB,{status:url.searchParams.get('status')||'pending',environment:url.searchParams.get('environment')||'all',page:Number(url.searchParams.get('page')||0)}));if(request.method==='POST'){const input=await readAdminBody(request);return Response.json(input.action==='hide-comment'?await hideReportedComment({db:env.DB,actor,input}):await resolveReport(env.DB,input,Date.now(),actor.id));}}
     if(url.pathname==='/api/admin/runtime-mode'){
       const actor=(await api.session(request,request.method==='POST')).user;
       if(request.method==='GET')return Response.json(await runtimeModeStatus(env.DB,rawEnv));
