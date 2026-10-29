@@ -1,3 +1,4 @@
+import {sendAccountMail} from './mail';
 import {env,rawEnv} from './runtime';
 import {modeEnv} from './lib/runtimeMode.mjs';
 import {creatorIdentity} from './lib/creator-server';
@@ -11,7 +12,7 @@ async function rawBody(request:Request,limit:number){
  const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}return new TextDecoder().decode(bytes);
 }
 export async function billingRequest(request:Request){
- const path=new URL(request.url).pathname,api=createBilling({db:env.DB,env});
+ const path=new URL(request.url).pathname,api=createBilling({db:env.DB,env,sendMail:sendAccountMail});
  if(/^\/api\/billing\/webhook(?:\/(test|live))?$/.test(path)&&request.method==='POST'){
   const raw=await rawBody(request,262144);
   // The legacy endpoint belongs to test; live has its own stable URL.
@@ -19,7 +20,7 @@ export async function billingRequest(request:Request){
   await verifyStripeSignature(raw,request.headers.get('stripe-signature'),paymentEnv.STRIPE_WEBHOOK_SECRET);
   let event;try{event=JSON.parse(raw);}catch{throw new GameError('Neplatná událost.');}
   if(event.livemode!==(mode==='live'))throw new GameError('Nesouhlasí prostředí platby.');
-  if(['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type))return Response.json(await createBilling({db:env.DB,env:paymentEnv}).fulfill(event.data?.object?.id));
+  if(['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type))return Response.json(await createBilling({db:env.DB,env:paymentEnv,sendMail:sendAccountMail}).fulfill(event.data?.object?.id));
   return Response.json({received:true});
  }
  const user=await creatorIdentity(request,true);

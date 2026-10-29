@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const text = Buffer.concat(chunks).toString('utf8');
   if (!validMailSignature(text, timestamp, signature, secret)) return reply(403, 'MAIL_SIGNATURE_INVALID');
   let input; try { input = JSON.parse(text); } catch { return reply(400); }
-  if (typeof input.to !== 'string' || !/^[^\s@<>\r\n]+@[^\s@<>\r\n]+\.[^\s@<>\r\n]+$/.test(input.to) || input.to.length > 254 || !['Potvrzení účtu – Pátrač', 'Obnova hesla – Pátrač'].includes(input.subject) || typeof input.text !== 'string' || input.text.length > 12000) return reply(400);
+  if (typeof input.to !== 'string' || !/^[^\s@<>\r\n]+@[^\s@<>\r\n]+\.[^\s@<>\r\n]+$/.test(input.to) || input.to.length > 254 || !['Potvrzení účtu – Pátrač', 'Obnova hesla – Pátrač', 'Potvrzení platby – Pátrač'].includes(input.subject) || typeof input.text !== 'string' || input.text.length > 12000) return reply(400);
   const transport = nodemailer.createTransport({ host: 'smtp.websupport.cz', port: 465, secure: true, auth: { user: 'stopar@stopik.cz', pass: process.env.PATRAC_SMTP_PASSWORD }, connectionTimeout: 10000, socketTimeout: 15000 });
   try {
     await transport.sendMail({ from: { name: 'Pátrač', address: 'patrac@stopik.cz' }, to: input.to, subject: input.subject, text: input.text, disableFileAccess: true, disableUrlAccess: true });

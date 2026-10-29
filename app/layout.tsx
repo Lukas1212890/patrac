@@ -3,6 +3,7 @@ import "./patrac.css";
 import RuntimeModeNotice from "./components/RuntimeModeNotice";
 import PwaGestureGuard from "./components/PwaGestureGuard";
 import "./community.css";
+import "./legal.css";
 export const metadata: Metadata = {
  title: "Pátrač — dobrodružství ze světa Stopíka",
  description: "Dobrodružné GPS výpravy za pokladem, hádanky a šifry pro děti i dospělé.",

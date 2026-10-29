@@ -1,3 +1,5 @@
+import {sendPurchaseConfirmation} from './purchaseConfirmation.mjs';
+import {validPurchaseAcceptance,recordAcceptance} from './legalAcceptance.mjs';
 import {stripeKeyMatchesMode} from './stripeKey.mjs';
 import {carryAdminAccess} from './adminAccessCarryover.mjs';
 import { GameError } from './patrac-engine.mjs';
@@ -24,7 +26,7 @@ export async function requirePaidAccess(env,userId) {
  const access=await accessState(env.DB,userId,billingEnvironment(env));
  if(!access.active)throw new GameError('Pro tvorbu, úpravy a spuštění výpravy si aktivujte přístup v profilu.',402);
 }
-export function createBilling({db,env,fetcher=fetch,now=Date.now}) {
+export function createBilling({db,env,fetcher=fetch,now=Date.now,sendMail}) {
  const environment=billingEnvironment(env);
  const available=()=>env.PATRAC_BILLING_ENABLED==='true'&&!!env.STRIPE_SECRET_KEY&&!!env.STRIPE_WEBHOOK_SECRET;
  async function stripe(path,params,idempotencyKey) {
@@ -45,6 +47,7 @@ export function createBilling({db,env,fetcher=fetch,now=Date.now}) {
   return {...access,enabled:env.PATRAC_BILLING_ENABLED==='true',available:available(),environment,plans:PLANS.map(p=>({months:p.months,amount:p.amount})),orders:orders.results};
  }
  async function checkout(user,input) {
+  if(!validPurchaseAcceptance(input))throw new GameError('Potvrďte aktuální podmínky a žádost o okamžité zahájení služby.',400);
   if(input.environment&&input.environment!==environment)throw new GameError('Režim hry se změnil. Obnovte profil před platbou.',409);
   if(!available())throw new GameError('Platby se právě připravují.',503);
   const plan=PLANS.find(p=>p.months===input.months);
@@ -63,6 +66,7 @@ export function createBilling({db,env,fetcher=fetch,now=Date.now}) {
    order=await db.prepare('SELECT * FROM patrac_orders WHERE user_id=? AND environment=? AND request_key=?').bind(user.id,environment,input.requestKey).first();
    if(!order)throw new GameError('Příliš mnoho platebních pokusů. Zkuste to později.',429);
   }
+  await recordAcceptance(db,user.id,'purchase-immediate',order.id);
   if(order.checkout_url){const old=await stripe('checkout/sessions/'+encodeURIComponent(order.session_id));if(old.status!=='open')throw new GameError('Platba již byla dokončena nebo vypršela. Obnovte profil a zkuste to znovu.',409);return {url:order.checkout_url};}
   const session=await stripe('checkout/sessions',{
    mode:'payment','line_items[0][price]':order.price_id,'line_items[0][quantity]':'1','payment_method_types[0]':'card',
@@ -96,8 +100,8 @@ export function createBilling({db,env,fetcher=fetch,now=Date.now}) {
      AND EXISTS(SELECT 1 FROM patrac_orders WHERE id=? AND activation_id=?)`)
      .bind(until,order.user_id,environment,current.version,order.id,activation),
    ]);
-   if(result[0].meta.changes)return {received:true};
-   if((await db.prepare('SELECT paid_at FROM patrac_orders WHERE id=?').bind(order.id).first())?.paid_at)return {received:true};
+   if(result[0].meta.changes){await sendPurchaseConfirmation(db,order.id,sendMail);return {received:true};}
+   if((await db.prepare('SELECT paid_at FROM patrac_orders WHERE id=?').bind(order.id).first())?.paid_at){await sendPurchaseConfirmation(db,order.id,sendMail);return {received:true};}
   }
   throw new GameError('Platba čeká na opakované potvrzení.',503);
  }

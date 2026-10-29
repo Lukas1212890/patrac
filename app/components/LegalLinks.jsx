@@ -1,0 +1,1 @@
+export default function LegalLinks(){return <p className="p-small p-legal-links"><a href="/podminky" target="_blank" rel="noopener">Obchodní podmínky</a> · <a href="/soukromi" target="_blank" rel="noopener">Ochrana osobních údajů</a> · <a href="mailto:patrac@stopik.cz">Kontakt</a></p>;}

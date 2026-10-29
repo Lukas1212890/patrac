@@ -1,3 +1,4 @@
+import {LEGAL_VERSION} from '../shared/legal.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -18,7 +19,7 @@ function fixture(overrides={}){
  return{native,db,env,api,calls,sessions,user:{id:'user',email:'user@example.com'},setClock:v=>stamp=v};
 }
 async function purchase(f,months=3,key=crypto.randomUUID()){
- const response=await f.api.checkout(f.user,{months,requestKey:key,amount:1,userId:'attacker'});
+ const response=await f.api.checkout(f.user,{termsVersion:LEGAL_VERSION,immediateAccess:true,months,requestKey:key,amount:1,userId:'attacker'});
  const session=f.sessions.get(response.url.split('/').at(-1));session.status='complete';session.payment_status='paid';return session;
 }
 test('calendar-month extension clamps month ends and preserves UTC time, including leap years',()=>{
@@ -26,10 +27,10 @@ test('calendar-month extension clamps month ends and preserves UTC time, includi
  assert.equal(new Date(addMonths(Date.UTC(2024,1,29,5),12)).toISOString(),'2025-02-28T05:00:00.000Z');
 });
 test('checkout uses server price and account; retries reuse the same session; unavailable live prices fail closed',async()=>{
- const f=fixture(),key=crypto.randomUUID();const a=await f.api.checkout(f.user,{months:3,requestKey:key,amount:1,userId:'other'});const b=await f.api.checkout(f.user,{months:3,requestKey:key});assert.deepEqual(a,b);
+ const f=fixture(),key=crypto.randomUUID();const a=await f.api.checkout(f.user,{termsVersion:LEGAL_VERSION,immediateAccess:true,months:3,requestKey:key,amount:1,userId:'other'});const b=await f.api.checkout(f.user,{termsVersion:LEGAL_VERSION,immediateAccess:true,months:3,requestKey:key});assert.deepEqual(a,b);
  assert.equal(f.calls.filter(c=>c.options.method==='POST').length,1);const body=new URLSearchParams(f.calls[0].options.body);assert.equal(body.get('line_items[0][price]'),PLANS[0].price);assert.equal(body.get('metadata[patrac_user]'),'user');assert.equal(body.get('mode'),'payment');
- await assert.rejects(()=>f.api.checkout(f.user,{months:6,requestKey:key}),e=>e.status===409);
- const live=createBilling({db:f.db,env:{...f.env,PATRAC_STRIPE_MODE:'live'}});await assert.rejects(()=>live.checkout(f.user,{months:3,requestKey:crypto.randomUUID()}),e=>e.status===503);f.native.close();
+ await assert.rejects(()=>f.api.checkout(f.user,{termsVersion:LEGAL_VERSION,immediateAccess:true,months:6,requestKey:key}),e=>e.status===409);
+ const live=createBilling({db:f.db,env:{...f.env,PATRAC_STRIPE_MODE:'live'}});await assert.rejects(()=>live.checkout(f.user,{termsVersion:LEGAL_VERSION,immediateAccess:true,months:3,requestKey:crypto.randomUUID()}),e=>e.status===503);f.native.close();
 });
 test('unpaid session never grants access; duplicate paid events grant once, renewal extends current expiry',async()=>{
  const f=fixture(),session=await purchase(f);session.payment_status='unpaid';await f.api.fulfill(session.id);assert.equal((await f.api.state('user')).active,false);
@@ -58,8 +59,8 @@ test('signature verifies exact payload, rejects tampering, stale timestamps and 
  await verifyStripeSignature(raw,header,secret);await assert.rejects(()=>verifyStripeSignature(raw+' ',header,secret));await assert.rejects(()=>verifyStripeSignature(raw,header,secret,(stamp+301)*1000));await assert.rejects(()=>verifyStripeSignature(raw,header,''),e=>e.status===503);
 });
 test('disabled billing needs no migration and checkout cannot run; checkout rate limits reserve in SQL',async()=>{
- const off=createBilling({db:{},env:{PATRAC_BILLING_ENABLED:'false'}});assert.equal((await off.state('any')).enabled,false);await assert.rejects(()=>off.checkout({},{}),e=>e.status===503);
- const f=fixture();for(let i=0;i<10;i++)await f.api.checkout(f.user,{months:3,requestKey:crypto.randomUUID()});await assert.rejects(()=>f.api.checkout(f.user,{months:3,requestKey:crypto.randomUUID()}),e=>e.status===429);f.native.close();
+ const off=createBilling({db:{},env:{PATRAC_BILLING_ENABLED:'false'}});assert.equal((await off.state('any')).enabled,false);await assert.rejects(()=>off.checkout({},{termsVersion:LEGAL_VERSION,immediateAccess:true}),e=>e.status===503);
+ const f=fixture();for(let i=0;i<10;i++)await f.api.checkout(f.user,{termsVersion:LEGAL_VERSION,immediateAccess:true,months:3,requestKey:crypto.randomUUID()});await assert.rejects(()=>f.api.checkout(f.user,{termsVersion:LEGAL_VERSION,immediateAccess:true,months:3,requestKey:crypto.randomUUID()}),e=>e.status===429);f.native.close();
 });
 
 test('restricted test key supports checkout and idempotent access grants',async()=>{
@@ -78,9 +79,25 @@ test('restricted live key reaches checkout; wrong-mode and public keys never rea
    assert.equal(new URLSearchParams(options.body).get('line_items[0][price]'),'price_live3');
    return Response.json({id:'cs_livefixture',url:'https://checkout.stripe.com/c/pay/cs_livefixture'});
   }});
-  const attempt=()=>api.checkout(f.user,{months:3,environment:'live',requestKey:crypto.randomUUID()});
+  const attempt=()=>api.checkout(f.user,{termsVersion:LEGAL_VERSION,immediateAccess:true,months:3,environment:'live',requestKey:crypto.randomUUID()});
   if(key==='rk_live_fixture'){await attempt();assert.equal(calls,1);}
   else{await assert.rejects(attempt,e=>e.status===503);assert.equal(calls,0);}
  }
  f.native.close();
+});
+
+test('checkout rejects missing, old, or nonboolean consent before contacting Stripe',async()=>{
+ const f=fixture();
+ for(const input of [{},{termsVersion:'old',immediateAccess:true},{termsVersion:LEGAL_VERSION,immediateAccess:'true'}])await assert.rejects(()=>f.api.checkout(f.user,{months:3,requestKey:crypto.randomUUID(),...input}),e=>e.status===400);
+ assert.equal(f.calls.length,0);assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_orders').get().n,0);
+ await purchase(f);const row=f.native.prepare('SELECT * FROM patrac_legal_acceptance').get();assert.equal(row.user_id,'user');assert.equal(row.kind,'purchase-immediate');assert.equal(row.version,LEGAL_VERSION);f.native.close();
+});
+
+test('paid mail retries after failure without granting access twice and includes accepted contract',async()=>{
+ const f=fixture(),session=await purchase(f);let attempts=0,body='';
+ const api=createBilling({db:f.db,env:f.env,fetcher:async()=>Response.json(session),sendMail:async(to,subject,text)=>{attempts++;assert.equal(to,'user@example.com');body=text;if(attempts===1)throw Error('mail unavailable');}});
+ await assert.rejects(()=>api.fulfill(session.id),/mail unavailable/);
+ assert.equal(f.native.prepare('SELECT version FROM patrac_access').get().version,1);
+ await api.fulfill(session.id);await api.fulfill(session.id);assert.equal(attempts,2);assert.equal(f.native.prepare('SELECT version FROM patrac_access').get().version,1);
+ assert.match(body,/Vzor oznámení o odstoupení/);assert.match(body,/TESTOVACÍ PLATBA/);assert.ok(body.length<12000);assert.ok(Buffer.byteLength(JSON.stringify({to:'user@example.com',subject:'Potvrzení platby – Pátrač',text:body}))<16000);f.native.close();
 });

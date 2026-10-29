@@ -1,3 +1,5 @@
+import {validSignupAcceptance,recordAcceptance} from './legalAcceptance.mjs';
+import {LEGAL_VERSION,termsText} from '../../shared/legal.mjs';
 import { betterAuth } from 'better-auth';
 import {APIError,createAuthMiddleware} from 'better-auth/api';
 import {nickname} from './nicknames.mjs';
@@ -13,9 +15,10 @@ export function createAccountAuth(settings) { return betterAuth({
     user: { modelName: 'patrac_auth_user', additionalFields:{nicknameKey:{type:'string',required:false,input:false,returned:false,unique:true}} },
     hooks:{before:createAuthMiddleware(async ctx=>{
       if(ctx.path!=='/sign-up/email')return;
+      if(!validSignupAcceptance(ctx.body))throw new APIError('BAD_REQUEST',{code:'LEGAL_ACCEPTANCE_REQUIRED',message:'Potvrďte věk alespoň 18 let a obchodní podmínky.'});
       try{const data=nickname(ctx.body.name),users=await nicknameUsers(ctx.context.adapter);if(users.some(u=>nickname(u.name).nicknameKey===data.nicknameKey))throw Error('Tato přezdívka je už obsazená.');ctx.body.name=data.name;}catch(e){throw new APIError('BAD_REQUEST',{code:'NICKNAME_TAKEN',message:e.message});}
     })},
-    databaseHooks:{user:{create:{before:async user=>({data:{...user,...nickname(user.name)}})},update:{before:async user=>user.name===undefined?undefined:{data:{...user,...nickname(user.name)}}}}},
+    databaseHooks:{user:{create:{before:async user=>({data:{...user,...nickname(user.name)}}),after:async(user,ctx)=>{if(ctx?.path==='/sign-up/email')await recordAcceptance(settings.DB,user.id,'signup','account');}},update:{before:async user=>user.name===undefined?undefined:{data:{...user,...nickname(user.name)}}}}},
     session: { modelName: 'patrac_auth_session', expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: false } },
     account: { modelName: 'patrac_auth_account' },
     verification: { modelName: 'patrac_auth_verification' },
@@ -27,7 +30,7 @@ export function createAccountAuth(settings) { return betterAuth({
     },
     emailVerification: {
       sendOnSignUp: true, sendOnSignIn: true, autoSignInAfterVerification: false, expiresIn: 3600,
-      sendVerificationEmail: async ({ user, url }) => { await settings.sendMail(user.email, 'Potvrzení účtu – Pátrač', `Vítejte v Pátrači! Svůj e-mail potvrďte otevřením odkazu:\n\n${url}\n\nOdkaz platí jednu hodinu. Pokud jste účet nevytvářeli, zprávu ignorujte.`); },
+      sendVerificationEmail: async ({ user, url }) => { await settings.sendMail(user.email, 'Potvrzení účtu – Pátrač', `Vítejte v Pátrači! Svůj e-mail potvrďte otevřením odkazu:\n\n${url}\n\nOdkaz platí jednu hodinu. Pokud jste účet nevytvářeli, zprávu ignorujte.\n\nObchodní podmínky, verze ${LEGAL_VERSION}:\n\n${termsText}\n\nOchrana osobních údajů: https://patrac.stopik.cz/soukromi`); },
     },
     rateLimit: { enabled: true, storage: 'database', modelName: 'patrac_auth_rate_limit', window: 60, max: 60,
       customRules: { '/sign-in/email': { window: 60, max: 5 }, '/sign-up/email': { window: 300, max: 3 }, '/request-password-reset': { window: 300, max: 3 }, '/send-verification-email': { window: 300, max: 3 } } },
