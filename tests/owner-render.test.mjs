@@ -15,7 +15,7 @@ test('a prepared private expedition renders author edit and delete controls with
  const html=renderToStaticMarkup(createElement(mod.exports.Owner,props));
  assert.ok(html.includes('Připravená výprava'));assert.ok(html.includes('Upravit celou výpravu'));assert.ok(html.includes('Smazat celou výpravu'));assert.ok(html.includes('49.30000'));
  const publicHtml=renderToStaticMarkup(createElement(mod.exports.Owner,{...props,data:{...props.data,game:{...props.data.game,visibility:'public',published:false}}}));
- assert.ok(publicHtml.includes('Zveřejnit na mapě'));assert.ok(publicHtml.includes('Smazat celou výpravu'));
+ assert.ok(publicHtml.includes('Zveřejnit na mapě'));assert.ok(publicHtml.indexOf('Zveřejnit na mapě')<publicHtml.indexOf('KÓD VÝPRAVY'));assert.ok(publicHtml.indexOf('Zveřejnit na mapě')<publicHtml.indexOf('Hodnocení'));assert.ok(publicHtml.includes('Smazat celou výpravu'));
  for(const locked of [true,false]){
   const rendered=renderToStaticMarkup(createElement(mod.exports.Owner,{...props,data:{...props.data,publicLocked:locked,activePlayers:locked?2:0,game:{...props.data.game,visibility:'public',published:true,status:'running'}}}));
   const buttons=[...rendered.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)];
