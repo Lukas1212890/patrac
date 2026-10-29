@@ -3,7 +3,7 @@ import {apiUrl} from './apiUrl.mjs';
 import {creatorAccessToken} from './creator-client';
 export async function publicRequest(path,data,signal){
  const token=await creatorAccessToken();
- const response=await fetch(apiUrl('/api/public'+path),{method:data?'POST':'GET',cache:'no-store',signal:signal||AbortSignal.timeout(20000),headers:{...(token?{'X-Patrac-Account':token}:{}),...(data?{'Content-Type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{})});
+ const response=await fetch(apiUrl('/api/public'+path),{method:data?'POST':'GET',cache:'no-store',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000),headers:{...(token?{'X-Patrac-Account':token}:{}),...(data?{'Content-Type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{})});
  let result;try{result=await response.json();}catch{throw Error('Server nevrátil odpověď. Zkuste to znovu.');}
  if(!response.ok)throw Object.assign(Error(result.error||'Výpravu se nepodařilo načíst.'),{status:response.status});return result;
 }
