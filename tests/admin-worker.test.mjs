@@ -53,7 +53,10 @@ test('Worker HTTP admin routes enforce origins and real session roles before exp
     assert.equal(await bucket.get('hints/ABCDEFG/photo'),null);assert.ok(await bucket.get('hints/HJKLMNP/keep'));
     assert.equal((await db.prepare('SELECT code FROM patrac_expeditions WHERE code=?').bind('ABCDEFG').first()),null);
     assert.equal((await(await request('/api/admin/users/regular',null,admin)).json()).audit.filter(a=>a.action==='delete-expedition'&&a.status==='success').length,1);
-    const emailChange=await request('/api/admin/users',{action:'update',id:'regular',name:current.name,email:'updated@example.com',updatedAt:current.updatedAt},admin);
+    const emailInput={action:'update',id:'regular',name:current.name,email:'updated@example.com',updatedAt:current.updatedAt};
+    let denied=await request('/api/admin/users',emailInput,admin);assert.equal(denied.status,428);
+    denied=await request('/api/admin/users',{...emailInput,adminPassword:'wrong'},admin);assert.equal(denied.status,403);
+    const emailChange=await request('/api/admin/users',{...emailInput,adminPassword:password},admin);
     assert.equal(emailChange.status,200,await emailChange.clone().text());
     assert.equal((await request('/api/admin/users',null,regular)).status,401);
   }finally{await mf.dispose();}

@@ -1,3 +1,4 @@
+import {requireAdminPassword} from './adminPassword.mjs';
 import {previewAccessRevocation,revokeAdminAccess} from './accessRevocation.mjs';
 import {subscriptionQuery,subscriptionSummary,subscriptionHistory} from './adminSubscriptions.mjs';
 import {carryAdminAccess} from './adminAccessCarryover.mjs';
@@ -141,6 +142,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
         if (emailChanged && await db.prepare('SELECT id FROM patrac_auth_user WHERE lower(email) = ? AND id != ?').bind(email,user.id).first()) throw new AdminError('Tento e-mail už používá jiný účet.',409,'ADMIN_EMAIL_TAKEN');
         if (name === user.name && !emailChanged) return { ok: true, message: 'Údaje už jsou aktuální.' };
       }
+      if(action==='reset'||emailChanged)await requireAdminPassword({db,actor,password:input.adminPassword,now,ErrorType:AdminError});
       const details = action === 'update' ? { oldName:user.name, name, ...(emailChanged ? {oldEmail:user.email,email} : {}) } : {};
       const auditId = await reserve(actor,user,action,details);
       try {

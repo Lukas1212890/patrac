@@ -52,7 +52,7 @@ test('search escapes wildcards; edited names are audited; stale versions and dup
 test('changed email is unverified, sessions are revoked and verification is sent only to the stored new address',async()=>{
   const f=await fixture(),before=(await f.service.detail(f.admin,'target')).user;
   f.db.prepare("INSERT INTO patrac_auth_verification(id,identifier,value,expiresAt,createdAt,updatedAt) VALUES('old-reset','reset-password:old-token','target',?,?,?)").run(Date.now()+600000,Date.now(),Date.now());
-  await f.service.change(f.admin,{action:'update',id:'target',name:before.name,email:'NEW@example.com',updatedAt:before.updatedAt});
+  await f.service.change(f.admin,{action:'update',id:'target',name:before.name,email:'NEW@example.com',adminPassword:password,updatedAt:before.updatedAt});
   const row=f.db.prepare('SELECT email,emailVerified FROM patrac_auth_user WHERE id=\'target\'').get();
   assert.equal(row.email,'new@example.com');assert.equal(row.emailVerified,0);
   assert.equal(f.db.prepare("SELECT id FROM patrac_auth_verification WHERE identifier='reset-password:old-token'").get(),undefined);
@@ -61,8 +61,8 @@ test('changed email is unverified, sessions are revoked and verification is sent
 });
 test('mail actions cannot use a supplied recipient and are rate-limited; revocation invalidates signed sessions',async()=>{
   const f=await fixture();
-  for(let i=0;i<3;i++)await f.service.change(f.admin,{action:'reset',id:'target',email:'attacker@example.net'});
-  await assert.rejects(()=>f.service.change(f.admin,{action:'reset',id:'target'}),e=>e.status===429);
+  for(let i=0;i<3;i++)await f.service.change(f.admin,{action:'reset',adminPassword:password,id:'target',email:'attacker@example.net'});
+  await assert.rejects(()=>f.service.change(f.admin,{action:'reset',adminPassword:password,id:'target'}),e=>e.status===429);
   assert.ok(f.sent.every(x=>x.email==='target@example.com'));
   await f.service.change(f.admin,{action:'revoke',id:'target'});
   assert.equal(await f.auth.api.getSession({headers:new Headers({Authorization:'Bearer '+f.target.headers.get('x-patrac-account')})}),null);f.db.close();
@@ -70,10 +70,10 @@ test('mail actions cannot use a supplied recipient and are rate-limited; revocat
 test('old admin sessions can read but cannot mutate until a fresh login; membership does not follow the email',async()=>{
   const f=await fixture();f.setClock(Date.now()+16*60*1000);
   assert.equal((await f.service.list(f.admin)).total,3);
-  await assert.rejects(()=>f.service.change(f.admin,{action:'reset',id:'target'}),e=>e.code==='ADMIN_REAUTH_REQUIRED');
+  await assert.rejects(()=>f.service.change(f.admin,{action:'reset',adminPassword:password,id:'target'}),e=>e.code==='ADMIN_REAUTH_REQUIRED');
   assert.equal(f.sent.length,0);f.setClock(Date.now());
   const before=(await f.service.detail(f.admin,'admin')).user;
-  await f.service.change(f.admin,{action:'update',id:'admin',name:before.name,email:'new-admin@example.com',updatedAt:before.updatedAt});
+  await f.service.change(f.admin,{action:'update',id:'admin',name:before.name,email:'new-admin@example.com',adminPassword:password,updatedAt:before.updatedAt});
   f.db.prepare('UPDATE patrac_auth_user SET emailVerified=1 WHERE id=\'admin\'').run();
   f.db.prepare('UPDATE patrac_auth_user SET email=\'admin@example.com\' WHERE id=\'regular\'').run();
   const attacker=await f.login('admin@example.com');
@@ -83,7 +83,7 @@ test('old admin sessions can read but cannot mutate until a fresh login; members
 
 test('a failed mail does not pretend an email edit was rolled back, and removed admin membership takes effect immediately',async()=>{
   const f=await fixture(true),before=(await f.service.detail(f.admin,'target')).user;
-  const result=await f.service.change(f.admin,{action:'update',id:'target',name:before.name,email:'changed@example.com',updatedAt:before.updatedAt});
+  const result=await f.service.change(f.admin,{action:'update',id:'target',name:before.name,email:'changed@example.com',adminPassword:password,updatedAt:before.updatedAt});
   assert.equal(result.ok,true);assert.equal(result.warning,true);
   assert.equal(f.db.prepare('SELECT email FROM patrac_auth_user WHERE id=\'target\'').get().email,'changed@example.com');
   assert.equal((await f.service.detail(f.admin,'target')).audit[0].status,'saved_mail_failed');
@@ -134,4 +134,26 @@ test('expired access starts today and administrator gifts are also credited to l
  const f=await fixture(false,'test');f.db.prepare("INSERT INTO patrac_access VALUES('target','test',1,0)").run();await f.service.change(f.admin,accessInput());
  assert.ok((await f.service.detail(f.admin,'target')).billing.expiresAt>Date.now());assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM patrac_access WHERE environment='live'").get().n,1);f.db.close();
  const off=await fixture();await assert.rejects(()=>off.service.change(off.admin,accessInput()),e=>e.status===503);off.db.close();
+});
+
+test('fresh login never replaces per-action admin password; email and reset are independently protected',async()=>{
+ const f=await fixture();const before=(await f.service.detail(f.admin,'target')).user;
+ const edit={action:'update',id:'target',name:before.name,email:'new-person@example.com',updatedAt:before.updatedAt};
+ await assert.rejects(()=>f.service.change(f.admin,edit),e=>e.code==='ADMIN_PASSWORD_REQUIRED');
+ await assert.rejects(()=>f.service.change(f.admin,{...edit,adminPassword:'wrong-password'}),e=>e.code==='ADMIN_PASSWORD_INVALID');
+ assert.equal(f.db.prepare("SELECT email FROM patrac_auth_user WHERE id='target'").get().email,before.email);assert.equal(f.sent.length,0);
+ await f.service.change(f.admin,{action:'reset',id:'target',adminPassword:password});
+ await assert.rejects(()=>f.service.change(f.admin,{action:'reset',id:'target'}),e=>e.code==='ADMIN_PASSWORD_REQUIRED');
+ await assert.rejects(()=>f.service.change(f.admin,edit),e=>e.code==='ADMIN_PASSWORD_REQUIRED');
+ await f.service.change(f.admin,{...edit,adminPassword:password});
+ assert.equal(f.db.prepare("SELECT email FROM patrac_auth_user WHERE id='target'").get().email,'new-person@example.com');
+ assert.equal(JSON.stringify(f.db.prepare('SELECT * FROM patrac_admin_audit').all()).includes(password),false);
+ assert.equal(JSON.stringify(f.db.prepare('SELECT * FROM patrac_admin_password_attempts').all()).includes('wrong-password'),false);
+ f.db.close();
+});
+test('five incorrect per-action admin passwords are rate limited without changing the account',async()=>{
+ const f=await fixture();
+ for(let i=0;i<5;i++)await assert.rejects(()=>f.service.change(f.admin,{action:'reset',id:'target',adminPassword:'wrong'}),e=>e.code==='ADMIN_PASSWORD_INVALID');
+ await assert.rejects(()=>f.service.change(f.admin,{action:'reset',id:'target',adminPassword:password}),e=>e.code==='ADMIN_PASSWORD_RATE_LIMIT');
+ assert.equal(f.sent.length,0);f.db.close();
 });
