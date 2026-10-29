@@ -18,7 +18,7 @@ const CARD=`json_extract(e.payload,'$.deleteAt') AS deleteAt,${routeEstimateSQL}
  json_extract(e.payload,'$.publicInfo.estimatedMinutes') AS estimatedMinutes,json_extract(e.payload,'$.stations[0].lat') AS lat,
  json_extract(e.payload,'$.stations[0].radius') AS startRadius,json_extract(e.payload,'$.stations[0].lng') AS lng,json_array_length(json_extract(e.payload,'$.stations')) AS totalStations,
  substr(u.name,1,60) AS author,c.creator_id AS ownerId`;
-const PUBLIC="json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.published')=1 AND json_extract(e.payload,'$.status')='running'";
+const PUBLIC="json_extract(e.payload,'$.moderation') IS NULL AND json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.published')=1 AND json_extract(e.payload,'$.status')='running'";
 const BASE='FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code JOIN patrac_auth_user u ON u.id=c.creator_id';
 const safeCard=({ownerId,routePayload,...card})=>({...card,...routeInfoFor(JSON.parse(routePayload))});
 export function createPublicService({db,env,revealPhoto,now=Date.now}){
@@ -74,13 +74,13 @@ export function createPublicService({db,env,revealPhoto,now=Date.now}){
   return{attempt:attemptSummary(attempt),reused:!results[1].meta.changes};
  }
  async function play(code,user,input){await ready();await paid(user);const row=await ownAttempt(code,user.id);if(!row)throw new GameError('Tuto výpravu nejprve zahajte z mapy.',404);
-  const game=JSON.parse(row.game_payload);if(game.visibility!=='public'||game.status!=='running')throw new GameError('Výprava už není dostupná.',410);
+  const game=JSON.parse(row.game_payload);if(game.moderation)throw new GameError('Výpravu pozastavil správce: '+game.moderation.reason,403);if(game.visibility!=='public'||game.status!=='running')throw new GameError('Výprava už není dostupná.',410);
   if(input){
    if(!['arrive','answer','hint','solution','abandon'].includes(input.action))throw new GameError('Neplatná herní akce.');
    for(let i=0;i<5;i++){
     const current=i===0?row:await db.prepare('SELECT * FROM patrac_teams WHERE id=?').bind(row.id).first();if(!current)throw new GameError('Výprava byla odstraněna.',410);
     const next=applyAction(game,JSON.parse(current.payload),input,now()),wrong=next.wrongAnswer;delete next.wrongAnswer;
-    const result=await db.prepare("UPDATE patrac_teams SET payload=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM patrac_expeditions WHERE code=? AND json_extract(payload,'$.status')='running')").bind(JSON.stringify(next),row.id,current.version,code).run();
+    const result=await db.prepare("UPDATE patrac_teams SET payload=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM patrac_expeditions WHERE code=? AND json_extract(payload,'$.status')='running' AND json_extract(payload,'$.moderation') IS NULL)").bind(JSON.stringify(next),row.id,current.version,code).run();
     if(result.meta.changes){if(next.finishedAt){try{await createCreatorRewards({db,env,now}).rewardExpedition(code);}catch{console.error('Creator reward deferred to scheduled retry');}}return{ok:true,wrongAnswer:!!wrong};}
    }throw new GameError('Pokus se právě mění v jiném okně. Obnovte ho.',409);
   }

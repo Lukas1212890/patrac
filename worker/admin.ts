@@ -1,3 +1,5 @@
+import {GameError} from './lib/patrac-engine.mjs';
+import {reportsList,resolveReport,hideReportedComment} from './lib/contentModeration.mjs';
 import {expireAttempts} from './lib/expiredAttempts.mjs';
 import { env,rawEnv } from './runtime';
 import {runtimeModeStatus,changeRuntimeMode} from './lib/runtimeModeAdmin.mjs';
@@ -29,6 +31,7 @@ async function readAdminBody(request: Request) {
 export async function adminRequest(request: Request) {
   try {
     const url = new URL(request.url), api = service();
+    if(url.pathname==='/api/admin/reports'){const actor=(await api.session(request,request.method==='POST')).user;if(request.method==='GET')return Response.json(await reportsList(env.DB));if(request.method==='POST'){const input=await readAdminBody(request);return Response.json(input.action==='hide-comment'?await hideReportedComment({db:env.DB,actor,input}):await resolveReport(env.DB,input,Date.now(),actor.id));}}
     if(url.pathname==='/api/admin/runtime-mode'){
       const actor=(await api.session(request,request.method==='POST')).user;
       if(request.method==='GET')return Response.json(await runtimeModeStatus(env.DB,rawEnv));
@@ -43,7 +46,7 @@ export async function adminRequest(request: Request) {
     if (request.method === 'POST' && url.pathname === '/api/admin/users') { await api.session(request); return Response.json(await api.change(request,await readAdminBody(request))); }
     return Response.json({error:'Nenalezeno.'},{status:404});
   } catch (error) {
-    if (error instanceof AdminError) return Response.json({error:error.message,code:error.code},{status:error.status});
+    if (error instanceof AdminError || error instanceof GameError) return Response.json({error:error.message,code:(error as any).code},{status:error.status});
     return Response.json({error:'Administrace je dočasně nedostupná.'},{status:503});
   }
 }

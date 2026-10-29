@@ -89,7 +89,8 @@ export async function createExpedition(request: Request) {
 export async function viewExpedition(request: Request, code: string) {
   const { row, game } = await getGame(code), who = await identity(request, row), now = Date.now();
   if (game.status === 'deleting' && who.role !== 'owner') throw new GameError('Organizátor tuto výpravu odstranil.',410);
-  const meta = { code, name: game.name, mode: game.mode, status: game.status, startedAt: game.startedAt, totalStations: game.stations.length, visibility:game.visibility||'private',routeInfo:routeInfoFor(game) };
+  if(game.moderation && who.role!=='owner')throw new GameError('Výpravu pozastavil správce: '+game.moderation.reason,403);
+  const meta = { code, name: game.name, mode: game.mode, status: game.status, startedAt: game.startedAt, totalStations: game.stations.length, moderation:game.moderation||null,visibility:game.visibility||'private',routeInfo:routeInfoFor(game) };
   if (who.role === 'owner') {
     const activePlayers=await activePlayerCount(db(),code),publicLocked=game.visibility==='public'&&activePlayers>0;
     const playerNames=game.visibility==='public'?"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_public_attempts a ON a.team_id=t.id LEFT JOIN patrac_auth_user u ON u.id=a.user_id WHERE t.code=?":"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_auth_user u ON u.id=t.user_id WHERE t.code = ?";
@@ -119,6 +120,7 @@ export async function viewExpedition(request: Request, code: string) {
 }
 export async function changeExpedition(request: Request, code: string) {
   const input = await body(request); const { row, game } = await getGame(code);
+  if(game.moderation)throw new GameError('Výpravu pozastavil správce: '+game.moderation.reason,403);
   if (input.action === 'delete') {
     const account = await creatorIdentity(request,true);
     return json(await removeExpedition(db(),env.BUCKET,{code,userId:account!.id,version:input.version,confirmation:input.confirmation}));
@@ -197,7 +199,7 @@ export async function changeExpedition(request: Request, code: string) {
     const teamRow = attempt === 0 ? who.teamRow : await db().prepare('SELECT * FROM patrac_teams WHERE id = ?').bind(who.team.id).first<any>();
     const state = JSON.parse(teamRow.payload), next = applyAction(game, state, input, Date.now());
     const wrong = next.wrongAnswer; delete next.wrongAnswer;
-    const result = await db().prepare('UPDATE patrac_teams SET payload = ?, version = version + 1 WHERE id = ? AND version = ?').bind(JSON.stringify(next), teamRow.id, teamRow.version).run();
+    const result = await db().prepare("UPDATE patrac_teams SET payload = ?, version = version + 1 WHERE id = ? AND version = ? AND EXISTS(SELECT 1 FROM patrac_expeditions WHERE code=? AND json_extract(payload,'$.moderation') IS NULL)").bind(JSON.stringify(next), teamRow.id, teamRow.version,code).run();
     if (result.meta.changes) return json({ ok: true, wrongAnswer: Boolean(wrong) });
   }
   throw new GameError('Tým právě ukládá jinou akci. Obnovte průběh.', 409);

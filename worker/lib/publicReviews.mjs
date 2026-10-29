@@ -11,7 +11,7 @@ export function createReviewService({db,env,now=Date.now}){
  const environment=billingEnvironment(env);
  /** @param {string} code @param {{id:string}|null} user */
  async function route(code,user=null){
-  const row=await db.prepare("SELECT e.code,c.creator_id FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND json_extract(e.payload,'$.visibility')='public' AND (json_extract(e.payload,'$.published')=1 OR c.creator_id=?) AND json_extract(e.payload,'$.status')='running'").bind(code,user?.id||'').first();
+  const row=await db.prepare("SELECT e.code,c.creator_id FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND json_extract(e.payload,'$.visibility')='public' AND (json_extract(e.payload,'$.published')=1 OR c.creator_id=?) AND json_extract(e.payload,'$.status')='running' AND json_extract(e.payload,'$.moderation') IS NULL").bind(code,user?.id||'').first();
   if(!row)throw new GameError('Výprava už není veřejně dostupná.',404);return row;
  }
  async function canReview(code,user,ownerId){
@@ -24,7 +24,7 @@ export function createReviewService({db,env,now=Date.now}){
  }
  async function page(code,offset=0,owner=false){
   const ready=await repliesReady(db);
-  const rows=await db.prepare(`SELECT substr(u.name,1,60) AS nickname,r.stars,r.comment,r.created_at AS createdAt,r.updated_at AS updatedAt
+  const rows=await db.prepare(`SELECT r.rowid AS reportKey,substr(u.name,1,60) AS nickname,r.stars,r.comment,r.created_at AS createdAt,r.updated_at AS updatedAt
    ${owner?',r.user_id AS reviewKey':''}${ready?',q.content AS reply,q.updated_at AS replyAt,COALESCE(q.version,0) AS replyVersion':''}
    FROM patrac_public_reviews r JOIN patrac_auth_user u ON u.id=r.user_id
    ${ready?'LEFT JOIN patrac_review_replies q ON q.code=r.code AND q.review_user_id=r.user_id AND q.environment=r.environment':''}
@@ -57,7 +57,7 @@ export function createReviewService({db,env,now=Date.now}){
    SELECT ?,?,?,?,?,?,? WHERE EXISTS(
     SELECT 1 FROM patrac_public_attempts a JOIN patrac_teams t ON t.id=a.team_id JOIN patrac_expeditions e ON e.code=a.code
     WHERE a.code=? AND a.user_id=? AND a.environment=? AND json_extract(t.payload,'$.finishedAt') IS NOT NULL
-     AND json_extract(e.payload,'$.published')=1 AND json_extract(e.payload,'$.status')='running')
+     AND json_extract(e.payload,'$.published')=1 AND json_extract(e.payload,'$.status')='running' AND json_extract(e.payload,'$.moderation') IS NULL)
    ON CONFLICT(code,user_id,environment) DO UPDATE SET stars=excluded.stars,comment=excluded.comment,updated_at=excluded.updated_at`)
    .bind(code,user.id,environment,review.stars,review.comment,stamp,stamp,code,user.id,environment).run();
   if(!saved.meta.changes)throw new GameError('Výprava se mezitím změnila. Obnovte stránku.',409);
@@ -77,7 +77,7 @@ export function createReviewService({db,env,now=Date.now}){
   if(review.updated_at!==input.reviewUpdatedAt)throw new GameError('Komentář se mezitím změnil. Obnovte přehled.',409);
   const content=input.content.trim(),stamp=now();
   const saved=await db.prepare(`INSERT INTO patrac_review_replies(code,review_user_id,environment,content,created_at,updated_at,version)
-   SELECT ?,?,?,?,?,?,1 WHERE EXISTS(SELECT 1 FROM patrac_public_reviews r JOIN patrac_expeditions e ON e.code=r.code JOIN patrac_creator_games c ON c.code=e.code WHERE r.code=? AND r.user_id=? AND r.environment=? AND r.updated_at=? AND length(trim(r.comment))>0 AND c.creator_id=? AND json_extract(e.payload,'$.status')='running')
+   SELECT ?,?,?,?,?,?,1 WHERE EXISTS(SELECT 1 FROM patrac_public_reviews r JOIN patrac_expeditions e ON e.code=r.code JOIN patrac_creator_games c ON c.code=e.code WHERE r.code=? AND r.user_id=? AND r.environment=? AND r.updated_at=? AND length(trim(r.comment))>0 AND c.creator_id=? AND json_extract(e.payload,'$.status')='running' AND json_extract(e.payload,'$.moderation') IS NULL)
    AND (?=0 OR EXISTS(SELECT 1 FROM patrac_review_replies WHERE code=? AND review_user_id=? AND environment=?))
    ON CONFLICT(code,review_user_id,environment) DO UPDATE SET content=excluded.content,updated_at=excluded.updated_at,version=patrac_review_replies.version+1 WHERE patrac_review_replies.version=? AND patrac_review_replies.content IS NOT excluded.content`)
    .bind(code,input.reviewKey,environment,content,stamp,stamp,code,input.reviewKey,environment,input.reviewUpdatedAt,user.id,input.version,code,input.reviewKey,environment,input.version).run();

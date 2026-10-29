@@ -1,3 +1,4 @@
+import {moderateExpedition} from './contentModeration.mjs';
 import {requireAdminPassword} from './adminPassword.mjs';
 import {previewAccessRevocation,revokeAdminAccess} from './accessRevocation.mjs';
 import {subscriptionQuery,subscriptionSummary,subscriptionHistory} from './adminSubscriptions.mjs';
@@ -120,7 +121,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
     },
     async detail(request, id) {
       await requireAdmin(request); const user = await target(id);
-      const games = await db.prepare(`SELECT e.code,e.version,EXISTS(${activePlayersQuery('e.code')}) AS activePlayers,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.status') AS status,json_extract(e.payload,'$.deleteAt') AS deleteAt,json_extract(e.payload,'$.adminDeletion') AS deleteOperation,a.details AS deletionDetails
+      const games = await db.prepare(`SELECT e.code,e.version,json_extract(e.payload,'$.moderation.reason') AS suspensionReason,EXISTS(${activePlayersQuery('e.code')}) AS activePlayers,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.status') AS status,json_extract(e.payload,'$.deleteAt') AS deleteAt,json_extract(e.payload,'$.adminDeletion') AS deleteOperation,a.details AS deletionDetails
         FROM patrac_creator_games g JOIN patrac_expeditions e ON e.code = g.code LEFT JOIN patrac_admin_audit a ON a.id=json_extract(e.payload,'$.adminDeletion') WHERE g.creator_id = ? ORDER BY g.linked_at DESC LIMIT 100`).bind(id).all();
       const audit = await db.prepare(`SELECT a.action,a.status,a.created_at,a.details,u.email AS actor FROM patrac_admin_audit a
         LEFT JOIN patrac_auth_user u ON u.id = a.actor_id WHERE a.target_id = ? ORDER BY a.created_at DESC LIMIT 20`).bind(id).all();
@@ -128,6 +129,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
     },
     async change(request, input) {
       const actor = await requireAdmin(request, true), user = await target(input.id), action = input.action;
+      if(['suspend-expedition','restore-expedition'].includes(action))return moderateExpedition({db,actor,user,input,now,ErrorType:AdminError});
       if (action === 'limits') return changeCreatorLimits({db,actor,user,input,now,ErrorType:AdminError});
       if(action==='access-revoke')return revokeAdminAccess({db,actor,user,input,environment:billingMode,now,ErrorType:AdminError});
       if (action === 'access') return grantAccess(actor,user,input);
