@@ -109,3 +109,8 @@ html[data-patrac-home-locked] body:has(.p-view-home){bottom:auto}
 .p-mode-changed{position:fixed;z-index:20000;inset:auto 12px max(12px,env(safe-area-inset-bottom));display:grid;gap:10px;padding:18px;border:2px solid #2348df;border-radius:16px;background:#eaf2ff;color:#122053;box-shadow:0 6px 30px #12205344;max-width:600px;margin:auto}.p-mode-changed button{padding:12px;border-radius:10px;background:#dcfa63;color:#122053;font-weight:700}
 
 .p-how-to details{border-top:1px solid #c7d5ef;padding:14px 0}.p-how-to summary{cursor:pointer;line-height:1.5;font-size:15px}.p-how-to details p{margin:12px 0 0;line-height:1.65}.p-how-to ol{color:inherit;line-height:1.65}.p-how-to>ol li{margin-bottom:15px}.p-how-to>p{line-height:1.65}.p-how-to{overscroll-behavior:contain}.p-how-to>.p-text-button{display:block;margin-left:auto;margin-bottom:12px}
+
+/* A filled profile and check distinguish a signed-in account from a guest. */
+.p-header .p-profile-button.is-signed-in{background:#dfff60;color:#17234f;border:2px solid #dfff60;box-shadow:0 0 0 2px #ffffff24}
+.p-profile-signed-in{position:absolute;left:-3px;bottom:-3px;width:17px;height:17px;display:flex;align-items:center;justify-content:center;background:#dfff60;color:#17234f;border:2px solid #2348df;border-radius:50%;box-sizing:border-box;pointer-events:none}
+.p-header .p-profile-button:focus-visible{outline:3px solid white;outline-offset:4px}

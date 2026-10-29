@@ -11,7 +11,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Compass, ArrowLeft, ArrowRight, Plus, Users, Flag, Clock3, Trophy, LockKeyhole, Lightbulb, Image as ImageIcon, Navigation, MapPin, Map as MapIcon, RefreshCw, Download, Copy, Check, ChevronRight, LocateFixed, HelpCircle, ShieldCheck, UserRound, Trash2, Globe2, Map as MapTab, Footprints, Menu } from 'lucide-react';
 import ExpeditionMenu from './ExpeditionMenu';
 import OwnerReviews from './OwnerReviews';
-import NoticeBadge from './NoticeBadge';
+import ProfileButton from './ProfileButton';
 import RouteEstimateNote from './RouteEstimateNote';
 import {formatRouteDistance} from '../../shared/routeEstimate.mjs';
 import CommunityMap from './CommunityMap';
@@ -164,7 +164,7 @@ export default function PatracApp() {
   const availableGames = [...accountGames, ...saved.filter(s => account.user&&(!s.userId||s.userId===account.user.id))].filter((s, i, all) => all.findIndex(other => other.code === s.code && other.role === s.role) === i);
   const now = clock + offset.current;
   return <div className={'p-app p-view-' + view + (!account.user ? ' p-guest' : '')}>
-    <header className="p-header"><Brand home={home}/><div className="p-header-actions"><span className="p-desktop-label">Dobrodružství začíná venku.</span><button className="p-icon-button" aria-label="Jak se hraje" onClick={() => setHelp(true)}><HelpCircle size={21}/></button><button className="p-icon-button p-profile-button" aria-label={account.user ? "Můj profil"+(notificationState.unreadCount?", nepřečtená oznámení: "+notificationState.unreadCount:"") : "Přihlášení"} onClick={() => setView('account')}><UserRound size={20}/>{account.user&&<NoticeBadge count={notificationState.unreadCount}/>}</button>{(session || view==='public-prepare') && <button className="p-icon-button" aria-label="Menu výpravy" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}><Menu size={21}/></button>}</div></header>
+    <header className="p-header"><Brand home={home}/><div className="p-header-actions"><span className="p-desktop-label">Dobrodružství začíná venku.</span><button className="p-icon-button" aria-label="Jak se hraje" onClick={() => setHelp(true)}><HelpCircle size={21}/></button><ProfileButton user={account.user} unreadCount={notificationState.unreadCount} onClick={()=>setView('account')}/>{(session || view==='public-prepare') && <button className="p-icon-button" aria-label="Menu výpravy" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}><Menu size={21}/></button>}</div></header>
     {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onRead={notificationState.markRead} saving={notificationState.saving} error={notificationState.error} onOpenProfile={()=>navigate('account')}/>}
     {!online && <div className="p-connection" role="status">Jste offline. Čas běží dál. Hra se připojí, jakmile bude signál.</div>}
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
