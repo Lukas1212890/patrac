@@ -63,3 +63,12 @@ test('access revocation has its own notice with reason and never claims a game w
  const html=renderToStaticMarkup(createElement(mod.exports.Card,{notice:{type:'access-revoke',reason:'Oprava <script>bad</script>',expiresAt:1799999999999}}));
  assert.ok(html.includes('Správce odebral přidělený přístup'));assert.ok(html.includes('Důvod:'));assert.ok(html.includes('&lt;script&gt;'));assert.equal(html.includes('Výpravu odstranil'),false);assert.equal(html.includes('prodloužil'),false);assert.equal(html.includes('<script>'),false);
 });
+
+test('player moderation and report resolution notices have distinct messages and escape supplied text',async()=>{
+ const built=await build({stdin:{contents:"export {default as Card} from './CreatorNoticeCard.jsx';",resolveDir:process.cwd()+'/app/components',loader:'jsx'},bundle:true,platform:'node',format:'cjs',packages:'external',jsx:'automatic',write:false,logLevel:'silent'});
+ const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(require,mod,mod.exports);
+ const render=type=>renderToStaticMarkup(createElement(mod.exports.Card,{notice:{type,name:'Lesní hra',code:'ABCDEFG',reason:'<script>bad</script>',resolution:'Opraveno <script>bad</script>',createdAt:Date.now()}}));
+ const paused=render('player-suspend');assert.ok(paused.includes('Rozehranou výpravu pozastavil správce'));assert.ok(paused.includes('Čas i limit 48 hodin dál běží.'));assert.ok(paused.includes('&lt;script&gt;'));assert.equal(paused.includes('<script>'),false);
+ assert.ok(render('player-restore').includes('Rozehraná výprava byla obnovena'));
+ const resolved=render('report-resolved');assert.ok(resolved.includes('Vaše hlášení bylo vyřízeno'));assert.ok(resolved.includes('Opraveno &lt;script&gt;'));assert.equal(resolved.includes('Výpravu odstranil správce'),false);
+});

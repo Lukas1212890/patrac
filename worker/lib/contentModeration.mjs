@@ -1,3 +1,4 @@
+import {participantNoticeStatement,reportResolutionNoticeStatement} from './moderationNotices.mjs';
 import {GameError} from './patrac-engine.mjs';
 import {billingEnvironment} from './billing.mjs';
 const initialized=new WeakMap();
@@ -38,17 +39,21 @@ export async function moderateExpedition({db,actor,user,input,now,ErrorType}){
  const row=await db.prepare('SELECT e.* FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND c.creator_id=?').bind(input.code,user.id).first();if(!row)throw new ErrorType('Výprava nebyla nalezena.',404);
  const game=JSON.parse(row.payload),suspend=input.action==='suspend-expedition';
  if(row.version!==input.version||!!game.moderation===suspend)throw new ErrorType('Výprava se změnila. Obnovte detail.',409);
- const id=crypto.randomUUID(),details={code:input.code,name:game.name,reason:input.reason.trim()};
- const payload=suspend?{...game,moderation:{reason:details.reason,at:now()}}:{...game};if(!suspend)delete payload.moderation;
+ const id=crypto.randomUUID(),stamp=now(),details={code:input.code,name:game.name,reason:input.reason.trim()};
+ const participantNotice=await participantNoticeStatement(db,{auditId:id,code:input.code,type:suspend?'player-suspend':'player-restore',stamp,details});
+ const payload=suspend?{...game,moderation:{reason:details.reason,at:stamp}}:{...game};if(!suspend)delete payload.moderation;
  const result=await db.batch([
- db.prepare("INSERT INTO patrac_admin_audit(id,actor_id,target_id,action,details,status,created_at) SELECT ?,?,?,?,?, 'success',? WHERE EXISTS(SELECT 1 FROM patrac_expeditions WHERE code=? AND version=?)").bind(id,actor.id,user.id,input.action,JSON.stringify(details),now(),input.code,input.version),
- db.prepare('UPDATE patrac_expeditions SET payload=?,version=version+1 WHERE code=? AND version=? AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=?)').bind(JSON.stringify(payload),input.code,input.version,id)
+ db.prepare("INSERT INTO patrac_admin_audit(id,actor_id,target_id,action,details,status,created_at) SELECT ?,?,?,?,?, 'success',? WHERE EXISTS(SELECT 1 FROM patrac_expeditions WHERE code=? AND version=?)").bind(id,actor.id,user.id,input.action,JSON.stringify(details),stamp,input.code,input.version),
+ db.prepare('UPDATE patrac_expeditions SET payload=?,version=version+1 WHERE code=? AND version=? AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=?)').bind(JSON.stringify(payload),input.code,input.version,id),
+ ...(participantNotice?[participantNotice]:[])
  ]);if(!result[1].meta.changes)throw new ErrorType('Výprava se změnila. Obnovte detail.',409);
  return{ok:true,message:suspend?'Výprava je okamžitě pozastavena včetně hraní. Tvůrce dostane důvod v oznámeních.':'Pozastavení výpravy bylo zrušeno. Čas rozehraných pokusů se nezastavoval.'};
 }
 export async function resolveReport(db,input,now=Date.now(),actorId=null){
  await moderationReady(db);if(typeof input.id!=='string'||typeof input.resolution!=='string'||input.resolution.trim().length<3||input.resolution.length>500)throw new GameError('Zadejte způsob vyřízení (3 až 500 znaků).');
- const r=await db.prepare('UPDATE patrac_content_reports SET resolved_at=?,resolution=?,resolved_by=? WHERE id=? AND resolved_at IS NULL').bind(now,input.resolution.trim(),actorId,input.id).run();if(!r.meta.changes)throw new GameError('Hlášení už bylo vyřízeno.',409);return{ok:true,message:'Hlášení bylo vyřízeno.'};
+ const notice=await reportResolutionNoticeStatement(db,{reportId:input.id,resolution:input.resolution.trim(),stamp:now});
+ const result=await db.batch([notice,db.prepare("UPDATE patrac_content_reports SET resolved_at=?,resolution=?,resolved_by=? WHERE id=? AND resolved_at IS NULL AND EXISTS(SELECT 1 FROM patrac_moderation_notices WHERE id=?)").bind(now,input.resolution.trim(),actorId,input.id,'report-resolved:'+input.id)]);
+ if(!result[1].meta.changes)throw new GameError('Hlášení už bylo vyřízeno.',409);return{ok:true,message:'Hlášení bylo vyřízeno. Oznamovatel dostane potvrzení v oznámeních.'};
 }
 export async function hideReportedComment({db,actor,input,now=Date.now()}){
  await moderationReady(db);
@@ -57,11 +62,13 @@ export async function hideReportedComment({db,actor,input,now=Date.now()}){
  const snapshot=JSON.parse(report.snapshot),review=await db.prepare('SELECT r.user_id,r.updated_at,r.comment,q.content AS reply FROM patrac_public_reviews r LEFT JOIN patrac_review_replies q ON q.code=r.code AND q.review_user_id=r.user_id AND q.environment=r.environment WHERE r.rowid=? AND r.code=? AND r.environment=?').bind(report.review_key,report.code,report.environment).first();
  if(!review||review.updated_at!==snapshot.updated_at||review.comment!==snapshot.comment||review.reply!==snapshot.reply)throw new GameError('Komentář nebo odpověď se změnily. Posuďte aktuální obsah; staré hlášení lze uzavřít.',409);
  const id=crypto.randomUUID(),reason=input.reason.trim();
+ const resolutionNotice=await reportResolutionNoticeStatement(db,{reportId:report.id,resolution:reason,stamp:now,auditId:id});
  const results=await db.batch([
  db.prepare(`INSERT INTO patrac_admin_audit(id,actor_id,target_id,action,details,status,created_at) SELECT ?,?,?,'hide-comment',?,'success',? WHERE EXISTS(SELECT 1 FROM patrac_public_reviews r LEFT JOIN patrac_review_replies q ON q.code=r.code AND q.review_user_id=r.user_id AND q.environment=r.environment WHERE r.rowid=? AND r.updated_at=? AND r.comment=? AND q.content IS ?) AND EXISTS(SELECT 1 FROM patrac_content_reports WHERE id=? AND resolved_at IS NULL)`).bind(id,actor.id,review.user_id,JSON.stringify({code:report.code,name:snapshot.name,reason,environment:report.environment}),now,report.review_key,snapshot.updated_at,snapshot.comment,snapshot.reply,report.id),
  db.prepare("INSERT INTO patrac_admin_audit(id,actor_id,target_id,action,details,status,created_at) SELECT ?,?,c.creator_id,'hide-review-content',?,'success',? FROM patrac_creator_games c WHERE c.code=? AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=?)").bind(id+'-owner',actor.id,JSON.stringify({code:report.code,name:snapshot.name,reason,environment:report.environment}),now,report.code,id),
  db.prepare("UPDATE patrac_public_reviews SET comment='',updated_at=? WHERE rowid=? AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=?)").bind(now,report.review_key,id),
  db.prepare('DELETE FROM patrac_review_replies WHERE code=? AND review_user_id=? AND environment=? AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=?)').bind(report.code,review.user_id,report.environment,id),
+ resolutionNotice,
  db.prepare('UPDATE patrac_content_reports SET resolved_at=?,resolution=?,resolved_by=? WHERE id=? AND EXISTS(SELECT 1 FROM patrac_admin_audit WHERE id=?)').bind(now,reason,actor.id,report.id,id)
  ]);if(!results[0].meta.changes)throw new GameError('Obsah se mezitím změnil. Obnovte hlášení.',409);
  return{ok:true,message:'Komentář a navázaná odpověď byly odstraněny, hvězdičky zůstaly. Autor hodnocení dostane důvod v oznámeních.'};

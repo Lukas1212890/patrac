@@ -2,7 +2,7 @@
 // Only selected user-facing fields leave the API, never the admin's internal audit data.
 /** @param {any} db @param {string} userId @param {'test'|'live'|null} [environment] */
 export async function creatorNotices(db,userId,environment=null){
- const tables=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('patrac_admin_audit','patrac_creator_rewards','patrac_review_notices')").all();
+ const tables=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('patrac_admin_audit','patrac_creator_rewards','patrac_review_notices','patrac_moderation_notices')").all();
  const available=new Set(tables.results.map(r=>r.name)),notices=[];
  if(available.has('patrac_admin_audit')){
   const rows=await db.prepare(`SELECT id,action,details,created_at FROM patrac_admin_audit
@@ -29,6 +29,10 @@ export async function creatorNotices(db,userId,environment=null){
  if(environment&&available.has('patrac_review_notices')){
   const rows=await db.prepare('SELECT id,type,code,payload,created_at FROM patrac_review_notices WHERE recipient_id=? AND environment=? ORDER BY created_at DESC,id DESC LIMIT 50').bind(userId,environment).all();
   for(const r of rows.results){const p=JSON.parse(r.payload);if(r.type==='review'&&p.updated&&!p.comment&&notices.some(n=>n.type==='hide-review-content'&&n.code===r.code&&n.createdAt===r.created_at))continue;notices.push({id:'review-notice:'+r.id,type:r.type,code:r.code,createdAt:r.created_at,name:p.name,nickname:p.nickname,updated:!!p.updated,...(r.type==='review'?{stars:p.stars,comment:p.comment}:{reply:p.reply})});}
+ }
+ if(available.has('patrac_moderation_notices')){
+  const rows=await db.prepare("SELECT id,type,payload,created_at FROM patrac_moderation_notices WHERE user_id=? AND environment IN (?,'all') ORDER BY created_at DESC,id DESC LIMIT 50").bind(userId,environment).all();
+  for(const r of rows.results){const p=JSON.parse(r.payload);notices.push({id:'moderation:'+r.id,type:r.type,createdAt:r.created_at,code:p.code,name:p.name,...(r.type==='report-resolved'?{resolution:p.resolution}:{reason:p.reason})});}
  }
  notices.sort((a,b)=>b.createdAt-a.createdAt||a.id.localeCompare(b.id));
  return{notices:notices.slice(0,50)};

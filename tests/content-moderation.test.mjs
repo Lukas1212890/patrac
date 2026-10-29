@@ -95,3 +95,53 @@ test('players see suspension reason in their own history; unrelated accounts nev
  assert.equal((await f.api.history(f.users.bob)).attempts.length,0);
  f.native.close();
 });
+
+test('moderation notices target active participants only, preserve environment and survive completion or route removal',async()=>{
+ const f=fixture();await f.add('ABCDEFG');await f.add('HJKLMNP',{...f.base,visibility:'private'});
+ await f.api.start('ABCDEFG',f.users.alice,true);await f.api.start('ABCDEFG',f.users.bob,true);
+ f.native.prepare("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',?) WHERE name_key='public:test:bob'").run(f.now());
+ f.native.exec('ALTER TABLE patrac_teams ADD COLUMN user_id TEXT');
+ f.native.prepare('INSERT INTO patrac_teams(id,code,token_hash,name_key,payload,user_id) VALUES(?,?,?,?,?,?)').run('private-bob','HJKLMNP','hash','bob',JSON.stringify({startedAt:f.now(),events:[],index:0}),'bob');
+ async function mod(code,action){const version=f.native.prepare('SELECT version FROM patrac_expeditions WHERE code=?').get(code).version;return moderateExpedition({db:f.db,actor:{id:'author'},user:{id:'author'},input:{action,code,version,reason:'Prověření bezpečnosti trasy'},now:f.now,ErrorType:AdminError});}
+ await mod('ABCDEFG','suspend-expedition');await mod('HJKLMNP','suspend-expedition');
+ const types=async(user,env)=> (await creatorNotices(f.db,user,env)).notices.filter(n=>n.type.startsWith('player-'));
+ assert.equal((await types('alice','test')).length,1);assert.equal((await types('alice','live')).length,0);
+ assert.equal((await types('bob','test')).length,1);assert.equal((await types('bob','live')).length,1);assert.equal((await types('bob','test'))[0].code,'HJKLMNP');
+ assert.equal((await types('unpaid','test')).length,0);
+ f.tick(1000);await mod('ABCDEFG','restore-expedition');
+ assert.deepEqual((await types('alice','test')).map(n=>n.type),['player-restore','player-suspend']);
+ f.native.prepare("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',?) WHERE code='ABCDEFG'").run(f.now());
+ const captured=await types('alice','test');
+ f.native.exec("DELETE FROM patrac_public_attempts WHERE code='ABCDEFG';DELETE FROM patrac_teams WHERE code='ABCDEFG';DELETE FROM patrac_creator_games WHERE code='ABCDEFG';DELETE FROM patrac_expeditions WHERE code='ABCDEFG';");
+ assert.deepEqual(await types('alice','test'),captured);
+ f.native.close();
+});
+test('resolved report notice belongs only to reporter and uses a stable identifier across reads',async()=>{
+ const f=fixture();await f.add('ABCDEFG');
+ await reportContent({db:f.db,env:f.env,user:f.users.alice,code:'ABCDEFG',input:{kind:'expedition',reason:'other',description:'Prosím prověřte tuto výpravu.'},now:f.now()});
+ const report=(await reportsList(f.db)).reports[0];
+ await resolveReport(f.db,{id:report.id,resolution:'Prověřeno a upraveno.'},f.now(),'author');
+ const filter=async(id,environment)=>(await creatorNotices(f.db,id,environment)).notices.filter(n=>n.type==='report-resolved');
+ const notices=await filter('alice','test');assert.equal(notices.length,1);assert.equal(notices[0].resolution,'Prověřeno a upraveno.');
+ assert.deepEqual(await filter('alice','test'),notices);assert.equal((await filter('alice','live')).length,0);assert.equal((await filter('bob','test')).length,0);
+ const {markNoticeReads,noticeReads}=await import('../worker/lib/noticeReads.mjs');const {noticeReadId}=await import('../shared/noticeReadState.mjs');
+ await markNoticeReads(f.db,'alice',notices,[noticeReadId(notices[0])]);assert.deepEqual(await noticeReads(f.db,'alice',await filter('alice','test')),[noticeReadId(notices[0])]);
+ f.native.close();
+});
+test('failure to record participant notices rolls back suspension and its audit',async()=>{
+ const f=fixture();await f.add('ABCDEFG');await f.api.start('ABCDEFG',f.users.alice,true);
+ const {moderationNoticesReady}=await import('../worker/lib/moderationNotices.mjs');await moderationNoticesReady(f.db);
+ f.native.exec("CREATE TRIGGER reject_moderation_notice BEFORE INSERT ON patrac_moderation_notices BEGIN SELECT RAISE(ABORT,'fixture failure');END;");
+ const version=f.native.prepare('SELECT version FROM patrac_expeditions').get().version;
+ await assert.rejects(()=>moderateExpedition({db:f.db,actor:{id:'author'},user:{id:'author'},input:{action:'suspend-expedition',code:'ABCDEFG',version,reason:'Nebezpečný most'},now:f.now,ErrorType:AdminError}));
+ assert.equal(JSON.parse(f.native.prepare('SELECT payload FROM patrac_expeditions').get().payload).moderation,undefined);assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM patrac_admin_audit').get().n,0);
+ f.native.close();
+});
+
+test('existing historical resolution notes are not published retroactively as notifications',async()=>{
+ const f=fixture();await f.add('ABCDEFG');
+ await reportContent({db:f.db,env:f.env,user:f.users.alice,code:'ABCDEFG',input:{kind:'expedition',reason:'other',description:'Hlášení před aktualizací služby'},now:f.now()});
+ f.native.prepare('UPDATE patrac_content_reports SET resolved_at=?,resolution=?').run(f.now(),'Historická poznámka správce');
+ const notices=(await creatorNotices(f.db,'alice','test')).notices;assert.equal(notices.some(n=>n.type==='report-resolved'),false);
+ f.native.close();
+});

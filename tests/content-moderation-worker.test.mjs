@@ -80,5 +80,14 @@ test('Worker moderation enforces reporting and administrator safety actions',asy
   assert.equal((await(await request('/api/admin/reports?status=resolved&environment=live',null,tokens.author)).json()).total,0);
   assert.equal((await request('/api/admin/reports?status=wrong',null,tokens.author)).status,400);
   assert.equal((await request('/api/admin/reports?status=resolved',null,tokens.player)).status,403);
+  const inbox=await(await request('/api/account/notices?format=3',null,tokens.player)).json();
+  for(const type of ['player-suspend','player-restore','report-resolved'])assert.ok(inbox.notices.some(n=>n.type===type),type);
+  const unrelated=await(await request('/api/account/notices?format=3',null,tokens.unpaid)).json();assert.equal(unrelated.notices.length,0);
+  const readIds=inbox.notices.map(n=>'typed-v2:'+n.id);
+  assert.equal((await request('/api/account/notices/read',{readIds},tokens.player)).status,200);
+  const anotherLogin=await request('/api/auth/sign-in/email',{email:'player@example.com',password});assert.equal(anotherLogin.status,200);
+  const anotherInbox=await(await request('/api/account/notices?format=3',null,anotherLogin.headers.get('set-auth-token'))).json();
+  assert.deepEqual(anotherInbox.readIds.sort(),readIds.sort());
+
  }finally{await mf.dispose();}
 });
