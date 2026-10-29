@@ -5,7 +5,7 @@ import { storeHintPhotos, removeReplacedPhotos } from './photoStorage.mjs';
 import {communityReady,validatePublicInfo,requirePublicAccess} from './publicExpeditions.mjs';
 import { allowedOrigin } from '../origin.mjs';
 import { creatorIdentity } from './creator-server';
-import { requirePaidAccess } from './billing.mjs';
+import { billingEnvironment, requirePaidAccess } from './billing.mjs';
 import {creatorLimits} from './creatorLimits.mjs';
 import { expeditionCount, reserveExpedition, removeExpedition } from './expeditionLifecycle.mjs';
 import { env } from '../runtime';
@@ -93,8 +93,8 @@ export async function viewExpedition(request: Request, code: string) {
   const meta = { code, name: game.name, mode: game.mode, status: game.status, startedAt: game.startedAt, totalStations: game.stations.length, moderation:game.moderation||null,visibility:game.visibility||'private',routeInfo:routeInfoFor(game) };
   if (who.role === 'owner') {
     const activePlayers=await activePlayerCount(db(),code),publicLocked=game.visibility==='public'&&activePlayers>0;
-    const playerNames=game.visibility==='public'?"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_public_attempts a ON a.team_id=t.id LEFT JOIN patrac_auth_user u ON u.id=a.user_id WHERE t.code=?":"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_auth_user u ON u.id=t.user_id WHERE t.code = ?";
-    const rows=await db().prepare(playerNames).bind(code).all<any>();
+    const playerNames=game.visibility==='public'?"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_public_attempts a ON a.team_id=t.id LEFT JOIN patrac_auth_user u ON u.id=a.user_id WHERE t.code=? AND a.environment=?":"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_auth_user u ON u.id=t.user_id WHERE t.code = ?";
+    const rows=await db().prepare(playerNames).bind(...(game.visibility==='public'?[code,billingEnvironment(env)]:[code])).all<any>();
     const teams = rows.results.map(r => JSON.parse(r.payload)).map(t => ({ ...t, ...score(game, t, now), timings: stationTimings(game, t) }));
     teams.sort((a, b) => (a.finishedAt ? 0 : 1) - (b.finishedAt ? 0 : 1) || (a.finishedAt && b.finishedAt ? (game.mode === 'race' ? a.totalMs - b.totalMs : a.finishedAt - b.finishedAt) : b.index - a.index) || a.joinedAt - b.joinedAt);
     const expanded = structuredClone(game);
