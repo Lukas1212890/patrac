@@ -1,11 +1,13 @@
+import {ensureAccessSegments} from './accessSegments.mjs';
 // Source records are additive grants. Future expiry includes queued extensions.
 export async function subscriptionQuery(db,environment,stamp){
+ await ensureAccessSegments(db);
  const rewards=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_creator_rewards'").first();
  const details="CASE WHEN json_valid(a.details) THEN a.details ELSE '{}' END";
  const value=key=>`json_extract(${details},'$.${key}')`;
  return {bindings:[environment,stamp],sql:`WITH context(environment,stamp) AS (VALUES (?,?)),
  access_rows AS (SELECT a.* FROM patrac_access a,context c WHERE a.environment=c.environment),
- grants AS (
+ base_grants AS (
  SELECT o.user_id AS userId,'paid' AS source,o.months,o.paid_at AS grantedAt,o.access_until AS accessUntil,o.amount,o.id AS reference,'' AS reason FROM patrac_orders o,context c WHERE o.environment=c.environment AND o.paid_at IS NOT NULL
  UNION ALL
  SELECT a.target_id,'admin',${value('months')},a.created_at,
@@ -13,9 +15,13 @@ export async function subscriptionQuery(db,environment,stamp){
  0,a.id,COALESCE(${value('reason')},'')
  FROM patrac_admin_audit a,context c WHERE a.action='access' AND a.status='success' AND (${value('environment')}=c.environment OR (c.environment='live' AND ${value('environment')}='test' AND ${value('liveApplied')} IS NOT NULL))
  ${rewards?"UNION ALL SELECT r.user_id,'reward',r.months,r.granted_at,r.access_until,0,r.code||':'||r.milestone,r.expedition_name FROM patrac_creator_rewards r,context c WHERE r.environment=c.environment":''}
+ ), grants AS (
+ SELECT b.userId,b.source,b.months,b.grantedAt,COALESCE(s.end_at,b.accessUntil) AS accessUntil,
+ b.accessUntil AS originalUntil,b.amount,b.reference,b.reason,s.start_at AS startAt,s.revoked_at AS revokedAt
+ FROM base_grants b LEFT JOIN patrac_access_segments s ON s.user_id=b.userId AND s.environment=(SELECT environment FROM context) AND s.source=b.source AND s.reference=b.reference
  ), relevant AS (
  SELECT g.* FROM grants g LEFT JOIN access_rows a ON a.user_id=g.userId,context c
- WHERE (COALESCE(a.expires_at,0)>c.stamp AND g.accessUntil>c.stamp) OR COALESCE(a.expires_at,0)<=c.stamp
+ WHERE g.revokedAt IS NULL AND ((COALESCE(a.expires_at,0)>c.stamp AND g.accessUntil>c.stamp) OR COALESCE(a.expires_at,0)<=c.stamp)
  ), source_summary AS (
  SELECT userId,GROUP_CONCAT(DISTINCT source) AS sources,COUNT(DISTINCT source) AS sourceCount,
  SUM(CASE WHEN source='paid' THEN months ELSE 0 END) AS paidMonths,

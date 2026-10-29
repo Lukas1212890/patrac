@@ -56,3 +56,10 @@ test('review notices and single creator replies render safe text and correct act
  const owner=renderToStaticMarkup(createElement(mod.exports.Reviews,{code:'ABCDEFG',reviews,isAuthor:true,user:{id:'owner'}}));assert.ok(owner.includes('Upravit odpověď'));assert.ok(owner.includes('Odpověď tvůrce'));assert.ok(owner.includes('&lt;b&gt;'));
  const visitor=renderToStaticMarkup(createElement(mod.exports.Reviews,{code:'ABCDEFG',reviews,isAuthor:false,user:{id:'player'}}));assert.ok(visitor.includes('Odpověď tvůrce'));assert.equal(visitor.includes('Upravit odpověď'),false);assert.equal(visitor.includes('Odpovědět na komentář'),false);
 });
+
+test('access revocation has its own notice with reason and never claims a game was deleted',async()=>{
+ const built=await build({stdin:{contents:"export {default as Card} from './CreatorNoticeCard.jsx';",resolveDir:process.cwd()+'/app/components',loader:'jsx'},bundle:true,platform:'node',format:'cjs',packages:'external',jsx:'automatic',write:false,logLevel:'silent'});
+ const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(require,mod,mod.exports);
+ const html=renderToStaticMarkup(createElement(mod.exports.Card,{notice:{type:'access-revoke',reason:'Oprava <script>bad</script>',expiresAt:1799999999999}}));
+ assert.ok(html.includes('Správce odebral přidělený přístup'));assert.ok(html.includes('Důvod:'));assert.ok(html.includes('&lt;script&gt;'));assert.equal(html.includes('Výpravu odstranil'),false);assert.equal(html.includes('prodloužil'),false);assert.equal(html.includes('<script>'),false);
+});

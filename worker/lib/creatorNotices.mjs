@@ -6,14 +6,16 @@ export async function creatorNotices(db,userId,environment=null){
  const available=new Set(tables.results.map(r=>r.name)),notices=[];
  if(available.has('patrac_admin_audit')){
   const rows=await db.prepare(`SELECT id,action,details,created_at FROM patrac_admin_audit
-   WHERE target_id=? AND status='success' AND action IN ('delete-expedition','access','limits')
+   WHERE target_id=? AND status='success' AND action IN ('delete-expedition','access','access-revoke','limits')
    AND json_valid(details)
    AND (action<>'limits' OR json_extract(details,'$.oldPrivateLimit') IS NOT json_extract(details,'$.privateLimit') OR json_extract(details,'$.oldPublicLimit') IS NOT json_extract(details,'$.publicLimit'))
    AND (action<>'access' OR json_extract(details,'$.environment')=? OR (?='live' AND json_extract(details,'$.liveApplied') IS NOT NULL))
-   ORDER BY created_at DESC,id DESC LIMIT 50`).bind(userId,environment,environment).all();
+   AND (action<>'access-revoke' OR EXISTS(SELECT 1 FROM json_each(details,'$.changes') WHERE json_extract(value,'$.environment')=?))
+   ORDER BY created_at DESC,id DESC LIMIT 50`).bind(userId,environment,environment,environment).all();
   for(const row of rows.results){
    const d=JSON.parse(row.details),base={id:row.id,type:row.action,createdAt:row.created_at};
    if(row.action==='delete-expedition')notices.push({...base,code:d.code,name:d.name,reason:d.reason});
+   if(row.action==='access-revoke'){const change=d.changes.find(p=>p.environment===environment);notices.push({...base,months:d.months,reason:d.reason,expiresAt:change.expiresAt});}
    if(row.action==='access')notices.push({...base,months:d.months,expiresAt:environment==='live'?(d.liveExpiresAt??d.expiresAt):d.expiresAt});
    if(row.action==='limits'&&(d.oldPrivateLimit!==d.privateLimit||d.oldPublicLimit!==d.publicLimit))notices.push({...base,oldPrivateLimit:d.oldPrivateLimit,oldPublicLimit:d.oldPublicLimit,privateLimit:d.privateLimit,publicLimit:d.publicLimit});
   }

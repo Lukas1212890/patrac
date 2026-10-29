@@ -37,6 +37,8 @@ export async function adminRequest(request: Request) {
     if (url.pathname.startsWith('/api/admin/users/') || (url.pathname==='/api/admin/users' && request.method==='POST')) { await api.session(request); await expireAttempts(env.DB); }
     if (request.method === 'GET' && url.pathname === '/api/admin/session') return Response.json(await api.session(request));
     if (request.method === 'GET' && url.pathname === '/api/admin/users') return Response.json(await api.list(request,{q:url.searchParams.get('q')||'',page:url.searchParams.get('page')||'0',status:url.searchParams.get('status')||'all',source:url.searchParams.get('source')||'all',months:url.searchParams.get('months')||'all',ending:url.searchParams.get('ending')||'all'}));
+    const previewMatch=/^\/api\/admin\/users\/([^/]+)\/access-preview$/.exec(url.pathname);
+    if(request.method==='GET'&&previewMatch)return Response.json(await api.previewAccess(request,decodeURIComponent(previewMatch[1]),url.searchParams.get('grant')||''));
     if (request.method === 'GET' && url.pathname.startsWith('/api/admin/users/')) return Response.json(await api.detail(request,decodeURIComponent(url.pathname.slice('/api/admin/users/'.length))));
     if (request.method === 'POST' && url.pathname === '/api/admin/users') { await api.session(request); return Response.json(await api.change(request,await readAdminBody(request))); }
     return Response.json({error:'Nenalezeno.'},{status:404});

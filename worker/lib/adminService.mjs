@@ -1,3 +1,4 @@
+import {previewAccessRevocation,revokeAdminAccess} from './accessRevocation.mjs';
 import {subscriptionQuery,subscriptionSummary,subscriptionHistory} from './adminSubscriptions.mjs';
 import {carryAdminAccess} from './adminAccessCarryover.mjs';
 import {activePlayersQuery} from './activeExpeditionPlayers.mjs';
@@ -83,6 +84,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
     return {ok:true,message:'Přístup byl prodloužen o '+input.months+' měsíců. Platba se tímto nevytváří.'};
   }
   return {
+    async previewAccess(request,id,reference){await requireAdmin(request);const user=await target(id);const preview=await previewAccessRevocation({db,userId:user.id,reference,environment:billingMode,now:now(),ErrorType:AdminError});return {...preview,plans:preview.plans.map(({segments,...plan})=>plan)};},
     async session(request, fresh=false) { return { user: await requireAdmin(request,fresh) }; },
     async list(request, query = {}) {
       await requireAdmin(request);
@@ -126,6 +128,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
     async change(request, input) {
       const actor = await requireAdmin(request, true), user = await target(input.id), action = input.action;
       if (action === 'limits') return changeCreatorLimits({db,actor,user,input,now,ErrorType:AdminError});
+      if(action==='access-revoke')return revokeAdminAccess({db,actor,user,input,environment:billingMode,now,ErrorType:AdminError});
       if (action === 'access') return grantAccess(actor,user,input);
       if (action === 'delete-expedition') return deleteAsAdmin({db,bucket,actor,user,input,now,ErrorType:AdminError});
       if (!['update','reset','verify','revoke'].includes(action)) throw new AdminError('Neznámá akce.');
