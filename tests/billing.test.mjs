@@ -101,3 +101,11 @@ test('paid mail retries after failure without granting access twice and includes
  await api.fulfill(session.id);await api.fulfill(session.id);assert.equal(attempts,2);assert.equal(f.native.prepare('SELECT version FROM patrac_access').get().version,1);
  assert.match(body,/Vzor oznámení o odstoupení/);assert.match(body,/TESTOVACÍ PLATBA/);assert.ok(body.length<12000);assert.ok(Buffer.byteLength(JSON.stringify({to:'user@example.com',subject:'Potvrzení platby – Pátrač',text:body}))<16000);f.native.close();
 });
+
+test('receipt is never sent for unpaid or mismatched server-verified payment',async()=>{
+ const f=fixture(),session=await purchase(f);let sent=0;
+ const api=createBilling({db:f.db,env:f.env,fetcher:async()=>Response.json(session),sendMail:async()=>{sent++;}});
+ session.payment_status='unpaid';await api.fulfill(session.id);assert.equal(sent,0);
+ session.payment_status='paid';session.amount_total=1;await assert.rejects(()=>api.fulfill(session.id));assert.equal(sent,0);
+ session.amount_total=19900;await api.fulfill(session.id);await api.fulfill(session.id);assert.equal(sent,1);f.native.close();
+});
