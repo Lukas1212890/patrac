@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {build} from 'esbuild';
 import {Miniflare} from 'miniflare';
 import {LEGAL_VERSION} from '../shared/legal.mjs';
-test('registration requires adult confirmation and current terms and records acceptance with mailed contract',async()=>{
+test('registration requires adult confirmation and current terms and records acceptance while verification email contains short legal links',async()=>{
  const built=await build({stdin:{contents:`import {createAccountAuth} from './worker/lib/accountAuth.mjs';import {env} from 'cloudflare:workers';let auth;export default {fetch(request){auth ||= createAccountAuth({...env,sendMail:async(to,subject,text)=>{await env.DB.prepare('INSERT INTO test_mail VALUES(?,?,?)').bind(to,subject,text).run();}});return auth.handler(request);}}`,resolveDir:process.cwd()},bundle:true,format:'esm',platform:'browser',external:['cloudflare:workers','node:*'],write:false,logLevel:'silent'});
  const mf=new Miniflare({modules:[{type:'ESModule',path:process.cwd()+'/worker/legal-test.mjs',contents:built.outputFiles[0].text}],modulesRoot:process.cwd(),compatibilityDate:'2026-05-22',compatibilityFlags:['nodejs_compat'],cf:false,d1Databases:['DB'],bindings:{PATRAC_AUTH_SECRET:'local-legal-test-key-not-production-12345',PATRAC_AUTH_BASE_URL:'http://localhost:8790',PATRAC_ALLOWED_ORIGINS:'http://localhost:3000'}});
  try{
@@ -16,6 +16,6 @@ test('registration requires adult confirmation and current terms and records acc
  response=await signup({adultConfirmed:false,termsVersion:LEGAL_VERSION});assert.equal(response.status,400);
  response=await signup({adultConfirmed:true,termsVersion:LEGAL_VERSION});assert.equal(response.status,200,await response.clone().text());
  const user=await db.prepare('SELECT id FROM patrac_auth_user').first(),acceptance=await db.prepare('SELECT * FROM patrac_legal_acceptance').first();assert.equal(acceptance.user_id,user.id);assert.equal(acceptance.version,LEGAL_VERSION);assert.equal(acceptance.kind,'signup');
- const mail=await db.prepare('SELECT body FROM test_mail').first();assert.match(mail.body,/Vzor oznámení o odstoupení/);assert.match(mail.body,/14286467/);assert.ok(mail.body.length<12000);assert.ok(Buffer.byteLength(JSON.stringify({to:'legal@example.com',subject:'Potvrzení účtu – Pátrač',text:mail.body}))<16000);
+ const mail=await db.prepare('SELECT body FROM test_mail').first();assert.match(mail.body,/https:\/\/patrac.stopik.cz\/podminky/);assert.match(mail.body,/https:\/\/patrac.stopik.cz\/soukromi/);assert.equal(mail.body.includes('Vzor oznámení o odstoupení'),false);assert.ok(mail.body.length<1500);assert.match(acceptance.terms_snapshot,/Vzor oznámení o odstoupení/);assert.ok(mail.body.length<12000);assert.ok(Buffer.byteLength(JSON.stringify({to:'legal@example.com',subject:'Potvrzení účtu – Pátrač',text:mail.body}))<16000);
  }finally{await mf.dispose();}
 });

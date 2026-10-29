@@ -1,5 +1,4 @@
 import {validSignupAcceptance,recordAcceptance} from './legalAcceptance.mjs';
-import {LEGAL_VERSION,termsText} from '../../shared/legal.mjs';
 import { betterAuth } from 'better-auth';
 import {APIError,createAuthMiddleware} from 'better-auth/api';
 import {nickname} from './nicknames.mjs';
@@ -30,7 +29,7 @@ export function createAccountAuth(settings) { return betterAuth({
     },
     emailVerification: {
       sendOnSignUp: true, sendOnSignIn: true, autoSignInAfterVerification: false, expiresIn: 3600,
-      sendVerificationEmail: async ({ user, url }) => { await settings.sendMail(user.email, 'Potvrzení účtu – Pátrač', `Vítejte v Pátrači! Svůj e-mail potvrďte otevřením odkazu:\n\n${url}\n\nOdkaz platí jednu hodinu. Pokud jste účet nevytvářeli, zprávu ignorujte.\n\nObchodní podmínky, verze ${LEGAL_VERSION}:\n\n${termsText}\n\nOchrana osobních údajů: https://patrac.stopik.cz/soukromi`); },
+      sendVerificationEmail: async ({ user, url }) => { await settings.sendMail(user.email, 'Potvrzení účtu – Pátrač', `Vítejte v Pátrači! Svůj e-mail potvrďte otevřením odkazu:\n\n${url}\n\nOdkaz platí jednu hodinu. Pokud jste účet nevytvářeli, zprávu ignorujte.\n\nObchodní podmínky: https://patrac.stopik.cz/podminky\n\nOchrana osobních údajů: https://patrac.stopik.cz/soukromi`); },
     },
     rateLimit: { enabled: true, storage: 'database', modelName: 'patrac_auth_rate_limit', window: 60, max: 60,
       customRules: { '/sign-in/email': { window: 60, max: 5 }, '/sign-up/email': { window: 300, max: 3 }, '/request-password-reset': { window: 300, max: 3 }, '/send-verification-email': { window: 300, max: 3 } } },
