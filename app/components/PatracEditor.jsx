@@ -6,7 +6,7 @@ import { preparePhoto, optimizeDraftPhotos } from '../lib/imageTools';
 import RouteEstimateFields from './RouteEstimateFields';
 import PatracMap from './PatracMap';
 import { draftOperation } from '../lib/draftStorage';
-import { validateExpedition, PENALTY_OPTIONS } from '../lib/patrac-engine.mjs';
+import { validateExpedition, PENALTY_OPTIONS, MAX_STATIONS } from '../lib/patrac-engine.mjs';
 export const blankStation = () => ({ name: '', lat: '', lng: '', radius: 25, arrivalText: '', question: '', answer: '', solutionMinutes: 30, hints: [{ type: 'text', content: '', minutes: 10 }] });
 const freshDraft = visibility => ({ name: '', finishText: '', mode: 'race', visibility,timeEstimateOverride:null, ...(visibility==='public'?{publicInfo:{description:'',difficulty:'easy'}}:{}), stations: [blankStation()] });
 export default function PatracEditor({ initial, onSave, onBack, saving, defaultVisibility='private' }) {
@@ -20,7 +20,7 @@ export default function PatracEditor({ initial, onSave, onBack, saving, defaultV
   useEffect(() => { if (initial || !draftLoaded) return; const timer = setTimeout(() => draftOperation('put', draft,storageKey).catch(() => setError('Telefon nemá dost místa pro uložení rozpracované výpravy.')), 400); return () => clearTimeout(timer); }, [draft, draftLoaded]);
   useEffect(() => {
     if (editing) return;
-    const target = draft.stations.length < 50 ? addButton.current : summaryPanel.current;
+    const target = draft.stations.length < MAX_STATIONS ? addButton.current : summaryPanel.current;
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ block: 'center' });
   }, [editing]);
@@ -30,7 +30,7 @@ export default function PatracEditor({ initial, onSave, onBack, saving, defaultV
     requestAnimationFrame(() => { stationPanel.current?.scrollIntoView({ block: 'start' }); stationPanel.current?.focus({ preventScroll: true }); });
   }
   function addStation() {
-    if (draft.stations.length >= 50 || stationSaving || saving || photoBusy) return;
+    if (draft.stations.length >= MAX_STATIONS || stationSaving || saving || photoBusy) return;
     const index = draft.stations.length;
     setDraft(d => ({ ...d, stations: [...d.stations, blankStation()] }));
     openStation(index);
@@ -77,8 +77,8 @@ export default function PatracEditor({ initial, onSave, onBack, saving, defaultV
       <label className="p-label">Závěrečná gratulace (volitelné)<textarea rows={4} maxLength={3000} value={draft.finishText||''} onChange={e=>setDraft(d=>({...d,finishText:e.target.value}))} placeholder="Dokázali jste to! Tajemství starého hradu je odhaleno…"/><small>Zobrazí se po vyřešení poslední hádanky, před výsledkem výpravy. Prázdné pole ponechá běžné zakončení.</small></label>
       <RouteEstimateFields draft={draft} onChange={fields=>setDraft(d=>({...d,...fields}))}/>
       {!isPublic&&<fieldset><legend>Jak se bude hrát?</legend><label className={'p-mode ' + (draft.mode === 'race' ? 'active' : '')}><input type="radio" checked={draft.mode === 'race'} onChange={() => setDraft({ ...draft, mode: 'race' })}/><div><strong>Závod na čas</strong><small>Nápovědy přidávají minuty k výsledku.</small></div></label><label className={'p-mode ' + (draft.mode === 'treasure' ? 'active' : '')}><input type="radio" checked={draft.mode === 'treasure'} onChange={() => setDraft({ ...draft, mode: 'treasure' })}/><div><strong>Hon za pokladem</strong><small>Bez nápověd. První nález vyhrává.</small></div></label></fieldset>}
-      <div className="p-list-heading"><strong>Trasa výpravy</strong><span>{draft.stations.length} / 50</span></div><div className="p-station-list">{draft.stations.map((item, i) => <button className={'p-station-link ' + (active === i ? 'active' : '')} key={i} disabled={photoBusy || gpsBusy || stationSaving || saving} onClick={() => openStation(i)}><span className="p-station-number">{i + 1}</span><span>{item.name || 'Nové stanoviště'}{i === draft.stations.length - 1 && <small>Poslední stopa</small>}</span></button>)}</div>
-      {!editing && <><p className="p-station-saved" role="status">{stationMessage}</p><button ref={addButton} type="button" className="p-primary p-add-next-station" disabled={draft.stations.length >= 50 || saving} onClick={addStation}><Plus size={18}/> Přidat další stanoviště</button>{draft.stations.length >= 50 && <p className="p-small">Máte všech 50 stanovišť. Nyní můžete dokončit výpravu.</p>}</>}</aside>
+      {draft.stations.length>MAX_STATIONS&&<p className="p-alert" role="alert">Tato dřívější výprava nebo koncept má více než {MAX_STATIONS} stanovišť. Nic nebylo odstraněno. Pro uložení úprav zkraťte trasu na nejvýše {MAX_STATIONS} stanovišť.</p>}<div className="p-list-heading"><strong>Trasa výpravy</strong><span>{draft.stations.length} / {MAX_STATIONS}</span></div><div className="p-station-list">{draft.stations.map((item, i) => <button className={'p-station-link ' + (active === i ? 'active' : '')} key={i} disabled={photoBusy || gpsBusy || stationSaving || saving} onClick={() => openStation(i)}><span className="p-station-number">{i + 1}</span><span>{item.name || 'Nové stanoviště'}{i === draft.stations.length - 1 && <small>Poslední stopa</small>}</span></button>)}</div>
+      {!editing && <><p className="p-station-saved" role="status">{stationMessage}</p><button ref={addButton} type="button" className="p-primary p-add-next-station" disabled={draft.stations.length >= MAX_STATIONS || saving} onClick={addStation}><Plus size={18}/> Přidat další stanoviště</button>{draft.stations.length === MAX_STATIONS && <p className="p-small">Máte všech {MAX_STATIONS} stanovišť. Nyní můžete dokončit výpravu.</p>}</>}</aside>
       <section ref={stationPanel} tabIndex={-1} aria-label={'Úprava stanoviště '+(active+1)} className="p-panel p-station-editor" inert={stationSaving || saving || undefined} hidden={!editing}><div className="p-row p-between"><span className="p-kicker">STANOVIŠTĚ {active + 1}</span><div className="p-row"><button className="p-icon-button" aria-label="Posunout stanoviště výš" disabled={active === 0 || photoBusy || gpsBusy || stationSaving || saving} onClick={() => move(-1)}><ArrowUp size={18}/></button><button className="p-icon-button" aria-label="Posunout stanoviště níž" disabled={active === draft.stations.length - 1 || photoBusy || gpsBusy || stationSaving || saving} onClick={() => move(1)}><ArrowDown size={18}/></button><button className="p-icon-button" aria-label={draft.stations.length === 1 ? 'Vymazat údaje stanoviště' : 'Smazat stanoviště'} disabled={photoBusy || gpsBusy || stationSaving || saving || !draftLoaded} onClick={() => removeStation(active)}><Trash2 size={18}/></button></div></div>
         <label className="p-label">Název místa<input value={s.name} maxLength={100} onChange={e => change({ name: e.target.value })} placeholder="Starý dub"/></label>
         <div className="p-field-grid"><label className="p-label">Zeměpisná šířka (N)<input type="number" step="any" min="-90" max="90" value={s.lat} onChange={e => change({ lat: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="49.300000"/></label><label className="p-label">Zeměpisná délka (E)<input type="number" step="any" min="-180" max="180" value={s.lng} onChange={e => change({ lng: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="17.390000"/></label></div>

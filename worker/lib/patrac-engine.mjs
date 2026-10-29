@@ -12,11 +12,12 @@ function optionalText(value, name) {
   if (typeof value !== 'string' || value.trim().length > 3000) throw new GameError(`${name}: nejvýše 3000 znaků.`);
   return value.trim();
 }
+export const MAX_STATIONS = 30;
 export const PENALTY_OPTIONS = [5, 10, 15, 20, 25, 30];
 export function validateExpedition(input) {
   const name = text(input.name, 100, 'název výpravy');
   if (!['race', 'treasure'].includes(input.mode)) throw new GameError('Vyberte režim výpravy.');
-  if (!Array.isArray(input.stations) || input.stations.length < 1 || input.stations.length > 50) throw new GameError('Výprava musí mít 1 až 50 stanovišť.');
+  if (!Array.isArray(input.stations) || input.stations.length < 1 || input.stations.length > MAX_STATIONS) throw new GameError(`Výprava musí mít 1 až ${MAX_STATIONS} stanovišť.`);
   const stations = input.stations.map((s, index) => {
     const coords = parseCoordinates(s);
     if (!coords) throw new GameError(`Stanoviště ${index + 1}: zadejte platné souřadnice.`);

@@ -1,4 +1,5 @@
 'use client';
+import {MAX_STATIONS} from '../lib/patrac-engine.mjs';
 import {useEffect,useRef} from 'react';
 export default function HowToPlay({onClose}){
  const panel=useRef(null),close=useRef(onClose);close.current=onClose;
@@ -36,7 +37,7 @@ export default function HowToPlay({onClose}){
  <li><strong>Přidej první stanoviště.</strong> Vyplň název místa a souřadnice. Můžeš je napsat ručně, použít „Vybrat na mapě“, nebo přímo na místě „Použít moji polohu“. Nastav vzdálenost pro odemčení hádanky; výchozí doporučení je 25 metrů. První stanoviště bude začátkem trasy.</li>
  <li><strong>Napiš hádanku a správnou odpověď.</strong> Více uznávaných odpovědí dej na samostatné řádky. Velikost písmen a diakritika nerozhodují. Volitelný „Popisek po příchodu“ hráči ukáže příběh místa před hádankou.</li>
  <li><strong>Připrav pomoc pro hráče.</strong> V závodu můžeš přidat až 5 textových nebo fotografických nápověd ke stanovišti. U každé vyber penalizaci 5 až 30 minut po pěti minutách. Samostatně nastav penalizaci za zobrazení řešení — hráči se ukáže první správná odpověď. V honbě za pokladem se nápovědy ani řešení nezobrazují.</li>
- <li><strong>Ulož stanoviště a pokračuj.</strong> Dole stiskni „Uložit stanoviště“, pak „Přidat další stanoviště“. Takto připravíš až 50 míst. Pořadí změníš šipkami, nepotřebné stanoviště odstraníš košem. U jediného stanoviště koš vymaže jeho údaje.</li>
+ <li><strong>Ulož stanoviště a pokračuj.</strong> Dole stiskni „Uložit stanoviště“, pak „Přidat další stanoviště“. Takto připravíš až {MAX_STATIONS} míst. Pořadí změníš šipkami, nepotřebné stanoviště odstraníš košem. U jediného stanoviště koš vymaže jeho údaje.</li>
  <li><strong>Zkontroluj celou trasu.</strong> Aplikace spočítá vzdálenost vzdušnou čarou a časový odhad. Můžeš zadat vlastní odhad správce, nejvýše 24 hodin. Do „Závěrečné gratulace“ můžeš napsat vlastní zakončení, které se ukáže po poslední správné odpovědi. Ověř, že jsou místa bezpečně přístupná a všechny hádanky řešitelné.</li>
  <li><strong>Vytvoř celou výpravu.</strong> Stiskni „Vytvořit výpravu“. Samotné „Uložit stanoviště“ ukládá pouze rozpracovaný koncept v tomto zařízení — ještě nevytvoří hotovou hru na serveru. Při pozdější úpravě použij „Uložit změny“.</li>
  <li><strong>Pozvi hráče.</strong> U veřejné výpravy stiskni nahoře „Zveřejnit na mapě“. Teprve potom ji ostatní najdou na mapě. U soukromé předej hráčům kód; po jejich připojení výpravu spusť.</li>
