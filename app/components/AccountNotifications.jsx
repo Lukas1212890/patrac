@@ -3,8 +3,8 @@ import {useState} from 'react';
 import {Bell,RefreshCw} from 'lucide-react';
 import NoticeBadge from './NoticeBadge';
 import CreatorNoticeCard from './CreatorNoticeCard';
-export default function AccountNotifications({notices=[],loading=false,saving=false,error='',onRefresh,unreadNotices=[],unreadCount=0,markRead=()=>{}}){
- const [expanded,setExpanded]=useState(false);
+export default function AccountNotifications({notices=[],loading=false,saving=false,error='',onRefresh,unreadNotices=[],unreadCount=0,markRead=()=>{},initiallyExpanded=false}){
+ const [expanded,setExpanded]=useState(initiallyExpanded);
  const unreadIds=new Set(unreadNotices.map(n=>n.id));
  return <section className="p-account-notifications" aria-label="Oznámení účtu"><div className="p-row p-between"><h2><Bell size={20}/> Oznámení <NoticeBadge count={unreadCount}/></h2><button type="button" className="p-icon-button" disabled={loading} aria-label="Obnovit oznámení" onClick={onRefresh}><RefreshCw size={17}/></button></div><p className="p-small">Změny přístupu, odměny a zprávy ke svým výpravám najdete tady. Zobrazujeme posledních 50 oznámení.</p>
  {unreadCount>0&&<button type="button" className="p-text-button p-mark-all-read" disabled={saving} onClick={()=>markRead(unreadNotices.map(n=>n.id))}>Označit všechna jako přečtená</button>}

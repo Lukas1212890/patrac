@@ -14,6 +14,7 @@ import ExpeditionMenu from './ExpeditionMenu';
 import OwnerReviews from './OwnerReviews';
 import CreatorStats from './CreatorStats';
 import ProfileButton from './ProfileButton';
+import {profileNavigationURL} from '../../shared/profileNavigation.mjs';
 import RouteEstimateNote from './RouteEstimateNote';
 import {formatRouteDistance} from '../../shared/routeEstimate.mjs';
 import CommunityMap from './CommunityMap';
@@ -87,7 +88,7 @@ export default function PatracApp() {
   }
 
   useEffect(() => { if (view === 'home') return installHomeGestureLock(window); }, [view]);
-  useEffect(() => { setSaved(remembered().filter(s => !s.pending)); const params = new URL(location.href).searchParams; if (params.get('public')&&/^[A-Z2-9]{7}$/.test(params.get('public').toUpperCase())) { setPublicCode(params.get('public').toUpperCase());setView('public-detail'); } if (params.get('billing')) setView('account'); if (params.get('code')) { setCode(params.get('code').toUpperCase()); setView('join'); } setOnline(navigator.onLine); const update = () => setOnline(navigator.onLine); window.addEventListener('online', update); window.addEventListener('offline', update); if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {}); return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); }; }, []);
+  useEffect(() => { setSaved(remembered().filter(s => !s.pending)); const params = new URL(location.href).searchParams; if (params.get('public')&&/^[A-Z2-9]{7}$/.test(params.get('public').toUpperCase())) { setPublicCode(params.get('public').toUpperCase());setView('public-detail'); } if (params.get('billing')||params.get('account')==='profile') setView('account'); if (params.get('code')) { setCode(params.get('code').toUpperCase()); setView('join'); } setOnline(navigator.onLine); const update = () => setOnline(navigator.onLine); window.addEventListener('online', update); window.addEventListener('offline', update); if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {}); return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); }; }, []);
   useEffect(() => { const t = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(t); }, []);
   const enter = useCallback(async s => {
     if (!account.user) { setView('account'); return; }
@@ -109,6 +110,7 @@ export default function PatracApp() {
   }, []);
   useEffect(() => { if (!session) return; refresh(); const interval = setInterval(() => { if (!document.hidden) refresh(); }, 5000); const resume = () => { if (!document.hidden) refresh(); }; window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume); window.addEventListener('pageshow', resume); return () => { clearInterval(interval); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); window.removeEventListener('pageshow', resume); }; }, [session?.code, session?.token, refresh]);
   function home() { setMenuOpen(false); setRewardNotice(false); currentSession.current = null; setSession(null); setData(null); setError(''); setView('home'); setResumeOpen(false); history.replaceState(null, '', '/'); }
+  function openProfile(section='menu'){setMenuOpen(false);setView('account');history.replaceState(null,'',profileNavigationURL(section,location.href));window.dispatchEvent(new CustomEvent('patrac-profile-navigate',{detail:section}));}
   function navigate(next){setMenuOpen(false);setRewardNotice(false);currentSession.current=null;setSession(null);setData(null);setError('');setView(next);setResumeOpen(false);history.replaceState(null,'','/');}
   function showPublic(code){setPublicBack(view==='rankings'?'rankings':'home');navigate('public-detail');setPublicCode(code);history.replaceState(null,'','/?public='+code);}
   async function action(input) {
@@ -143,7 +145,7 @@ export default function PatracApp() {
       const response = await fetch(apiUrl('/api/billing'), { cache: 'no-store', headers: { 'X-Patrac-Account': token || '' }, signal: AbortSignal.timeout(15000) });
       const access = await response.json();
       if (!response.ok) throw Error(access.error || 'Přístup se nepodařilo ověřit.');
-      if (access.enabled && !access.active) { setView('account'); return; }
+      if (access.enabled && !access.active) { openProfile('billing'); return; }
       setCreationVisibility(visibility); setEditInitial(null); setEditVersion(null); setView('editor');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
@@ -166,16 +168,16 @@ export default function PatracApp() {
   const availableGames = [...accountGames, ...saved.filter(s => account.user&&(!s.userId||s.userId===account.user.id))].filter((s, i, all) => all.findIndex(other => other.code === s.code && other.role === s.role) === i);
   const now = clock + offset.current;
   return <div className={'p-app p-view-' + view + (!account.user ? ' p-guest' : '')}>
-    <header className="p-header"><Brand home={home}/><div className="p-header-actions"><span className="p-desktop-label">Dobrodružství začíná venku.</span><button className="p-icon-button" aria-label="Jak se hraje" onClick={() => setHelp(true)}><HelpCircle size={21}/></button><ProfileButton user={account.user} unreadCount={notificationState.unreadCount} onClick={()=>setView('account')}/>{(session || view==='public-prepare') && <button className="p-icon-button" aria-label="Menu výpravy" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}><Menu size={21}/></button>}</div></header>
-    {account.user&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onRead={notificationState.markRead} saving={notificationState.saving} error={notificationState.error} onOpenProfile={()=>navigate('account')}/>}
+    <header className="p-header"><Brand home={home}/><div className="p-header-actions"><span className="p-desktop-label">Dobrodružství začíná venku.</span><button className="p-icon-button" aria-label="Jak se hraje" onClick={() => setHelp(true)}><HelpCircle size={21}/></button><ProfileButton user={account.user} unreadCount={notificationState.unreadCount} onClick={()=>openProfile('menu')}/>{(session || view==='public-prepare') && <button className="p-icon-button" aria-label="Menu výpravy" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}><Menu size={21}/></button>}</div></header>
+    {account.user&&view!=='account'&&<CreatorNotices key={account.user.id} userId={account.user.id} notices={notices} onRead={notificationState.markRead} saving={notificationState.saving} error={notificationState.error} onOpenProfile={()=>openProfile('notifications')}/>}
     {!online && <div className="p-connection" role="status">Jste offline. Čas běží dál. Hra se připojí, jakmile bude signál.</div>}
     {error && <div className="p-alert p-global-alert" role="alert">{error}</div>}
     {view === 'home' && <CommunityMap key={account.user?.id||'guest'} userId={account.user?.id} onSelect={showPublic} onJoin={()=>navigate('join')}/>}
-    {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>navigate('account')} onStarted={enter} onPrepare={expedition=>{setPreparation(expedition);setView('public-prepare');}}/>}
+    {view==='public-detail'&&publicCode&&<PublicExpeditionDetail code={publicCode} user={account.user} onBack={()=>navigate(publicBack)} backLabel={publicBack==='rankings'?'Zpět na žebříčky':'Zpět na mapu'} onAccount={()=>openProfile(account.user?'billing':'menu')} onStarted={enter} onPrepare={expedition=>{setPreparation(expedition);setView('public-prepare');}}/>}
     {view==='public-prepare'&&preparation&&account.user&&<PublicPreparation key={preparation.code+account.user.id} expedition={preparation} user={account.user} online={online} onStarted={enter} onBack={()=>setView('public-detail')}/>}
-    {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team'&&(!s.userId||s.userId===account.user?.id))} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>navigate('account')} onRestore={restore}/>}
-    {view==='rankings'&&<CommunityRankings user={account.user} tab={rankingTab} onTabChange={setRankingTab} onGames={()=>navigate('library')} onSelect={showPublic} onAccount={()=>navigate('account')} onMap={home}/>}
-    {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>navigate('account')} onCreate={visibility=>visibility==='public'?setRewardNotice(true):openEditor('private')} onGames={()=>navigate('library')}/>}
+    {view==='library'&&<PlayLibrary user={account.user} saved={saved.filter(s=>s.role==='team'&&(!s.userId||s.userId===account.user?.id))} savedOwners={saved.filter(s=>s.role==='owner'&&s.token)} onValidate={validatePrivateHistory} onEnter={enter} onAccount={()=>openProfile(account.user?'billing':'menu')} onRestore={restore}/>}
+    {view==='rankings'&&<CommunityRankings user={account.user} tab={rankingTab} onTabChange={setRankingTab} onGames={()=>navigate('library')} onSelect={showPublic} onAccount={()=>openProfile(account.user?'billing':'menu')} onMap={home}/>}
+    {view==='creator'&&<CreatorHub user={account.user} onAccount={()=>openProfile(account.user?'billing':'menu')} onCreate={visibility=>visibility==='public'?setRewardNotice(true):openEditor('private')} onGames={()=>navigate('library')}/>}
     {view==='creator'&&rewardNotice&&<CreatorRewardNotice onClose={()=>setRewardNotice(false)} onContinue={()=>{setRewardNotice(false);openEditor('public');}}/>}
 
     {resumeOpen && <SavedGames sessions={availableGames} onEnter={enter} onRestore={restore} onClose={() => setResumeOpen(false)}/>}
