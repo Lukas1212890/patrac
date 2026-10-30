@@ -94,7 +94,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       if (!Number.isSafeInteger(page) || page < 0 || page > 100000) throw new AdminError('Neplatná stránka.');
       const pattern = '%' + q.replace(/[\\%_]/g, c => '\\' + c) + '%';
       const status=String(query.status||'all'),source=String(query.source||'all'),months=String(query.months||'all'),ending=String(query.ending||'all');
-      if(!['all','active','expired','none'].includes(status)||!['all','paid','admin','reward','mixed','unknown'].includes(source)||!['all','2','3','6','12'].includes(months)||!['all','7','30','90'].includes(ending))throw new AdminError('Neplatný filtr přístupu.');
+      if(!['all','active','expired','none'].includes(status)||!['all','paid','admin','reward','registration','mixed','unknown'].includes(source)||!['all','2','3','6','12'].includes(months)||!['all','7','30','90'].includes(ending))throw new AdminError('Neplatný filtr přístupu.');
       const stamp=now(),enabled=['test','live'].includes(billingMode);
       if(!enabled&&(status!=='all'||source!=='all'||months!=='all'||ending!=='all'))throw new AdminError('Správa přístupu není zapnutá.');
       const prefix=enabled?await subscriptionQuery(db,billingMode,stamp):{sql:'',bindings:[]};
@@ -106,7 +106,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       if(source==='mixed')filters.push('s.sourceCount>=2');
       if(source==='unknown'){filters.push('COALESCE(a.expires_at,0)>? AND COALESCE(s.sourceCount,0)=0');values.push(stamp);}
       const eventFilters=[];
-      if(['paid','admin','reward'].includes(source)){eventFilters.push('g.source=?');values.push(source);}
+      if(['paid','admin','reward','registration'].includes(source)){eventFilters.push('g.source=?');values.push(source);}
       if(months!=='all'){eventFilters.push('g.months=?');values.push(Number(months));}
       if(eventFilters.length)filters.push('EXISTS(SELECT 1 FROM relevant g WHERE g.userId=u.id AND '+eventFilters.join(' AND ')+')');
       if(ending!=='all'){filters.push('a.expires_at>? AND a.expires_at<=?');values.push(stamp,stamp+Number(ending)*86400000);}
@@ -115,9 +115,9 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       const stats=await db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(emailVerified),0) AS verified FROM patrac_auth_user').first();
       const rows=await db.prepare(prefix.sql+`SELECT u.id,u.name,u.email,u.emailVerified,u.createdAt,u.updatedAt,
         (SELECT COUNT(*) FROM patrac_creator_games g WHERE g.creator_id=u.id) AS games
-        ${enabled?',a.expires_at,s.sources,s.paidMonths,s.adminMonths,s.rewardMonths':''}
+        ${enabled?',a.expires_at,s.sources,s.paidMonths,s.adminMonths,s.rewardMonths,s.registrationMonths':''}
         FROM patrac_auth_user u ${join} ${where} ORDER BY u.createdAt DESC,u.id ASC LIMIT 20 OFFSET ?`).bind(...bindings,page*20).all();
-      return {users:rows.results.map(row=>{const {expires_at,sources,paidMonths,adminMonths,rewardMonths,...user}=row;return {...safeUser(user),subscription:enabled?subscriptionSummary(row,billingMode,stamp):null};}),total:count.total,page,pageSize:20,stats,billingEnvironment:enabled?billingMode:null};
+      return {users:rows.results.map(row=>{const {expires_at,sources,paidMonths,adminMonths,rewardMonths,registrationMonths,...user}=row;return {...safeUser(user),subscription:enabled?subscriptionSummary(row,billingMode,stamp):null};}),total:count.total,page,pageSize:20,stats,billingEnvironment:enabled?billingMode:null};
     },
     async detail(request, id) {
       await requireAdmin(request); const user = await target(id);

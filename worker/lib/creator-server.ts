@@ -1,3 +1,5 @@
+import {grantRegistrationBonus} from './registrationBonus.mjs';
+import {env} from '../runtime';
 import { accountAuth } from '../auth';
 import { GameError } from './patrac-engine.mjs';
 export async function creatorIdentity(request: Request, required = false) {
@@ -7,5 +9,6 @@ export async function creatorIdentity(request: Request, required = false) {
   const headers = new Headers({ Authorization: 'Bearer ' + token });
   const session = await accountAuth().api.getSession({ headers });
   if (!session?.user?.emailVerified) throw new GameError('Přihlášení vypršelo nebo e-mail není ověřený.', 401);
+  await grantRegistrationBonus(env.DB,session.user.id);
   return { id: session.user.id, email: session.user.email, nickname: session.user.name };
 }

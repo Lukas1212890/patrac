@@ -3,6 +3,7 @@ import {ensureAccessSegments} from './accessSegments.mjs';
 export async function subscriptionQuery(db,environment,stamp){
  await ensureAccessSegments(db);
  const rewards=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_creator_rewards'").first();
+ const bonus=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_registration_bonus'").first();
  const details="CASE WHEN json_valid(a.details) THEN a.details ELSE '{}' END";
  const value=key=>`json_extract(${details},'$.${key}')`;
  return {bindings:[environment,stamp],sql:`WITH context(environment,stamp) AS (VALUES (?,?)),
@@ -15,6 +16,7 @@ export async function subscriptionQuery(db,environment,stamp){
  0,a.id,COALESCE(${value('reason')},'')
  FROM patrac_admin_audit a,context c WHERE a.action='access' AND a.status='success' AND (${value('environment')}=c.environment OR (c.environment='live' AND ${value('environment')}='test' AND ${value('liveApplied')} IS NOT NULL))
  ${rewards?"UNION ALL SELECT r.user_id,'reward',r.months,r.granted_at,r.access_until,0,r.code||':'||r.milestone,r.expedition_name FROM patrac_creator_rewards r,context c WHERE r.environment=c.environment":''}
+ ${bonus?"UNION ALL SELECT b.user_id,'registration',3,b.granted_at,b.access_until,0,b.user_id,'Registrační bonus při testování' FROM patrac_registration_bonus b,context c WHERE c.environment='test' AND b.granted_at IS NOT NULL":''}
  ), grants AS (
  SELECT b.userId,b.source,b.months,b.grantedAt,COALESCE(s.end_at,b.accessUntil) AS accessUntil,
  b.accessUntil AS originalUntil,b.amount,b.reference,b.reason,s.start_at AS startAt,s.revoked_at AS revokedAt
@@ -26,13 +28,14 @@ export async function subscriptionQuery(db,environment,stamp){
  SELECT userId,GROUP_CONCAT(DISTINCT source) AS sources,COUNT(DISTINCT source) AS sourceCount,
  SUM(CASE WHEN source='paid' THEN months ELSE 0 END) AS paidMonths,
  SUM(CASE WHEN source='admin' THEN months ELSE 0 END) AS adminMonths,
- SUM(CASE WHEN source='reward' THEN months ELSE 0 END) AS rewardMonths
+ SUM(CASE WHEN source='reward' THEN months ELSE 0 END) AS rewardMonths,
+ SUM(CASE WHEN source='registration' THEN months ELSE 0 END) AS registrationMonths
  FROM relevant GROUP BY userId
  ) `};
 }
 export function subscriptionSummary(row,environment,stamp){
  const expiresAt=row.expires_at||null;
- return {environment,expiresAt,active:(expiresAt||0)>stamp,sources:row.sources?row.sources.split(',').sort():[],paidMonths:row.paidMonths||0,adminMonths:row.adminMonths||0,rewardMonths:row.rewardMonths||0};
+ return {environment,expiresAt,active:(expiresAt||0)>stamp,sources:row.sources?row.sources.split(',').sort():[],paidMonths:row.paidMonths||0,adminMonths:row.adminMonths||0,rewardMonths:row.rewardMonths||0,registrationMonths:row.registrationMonths||0};
 }
 export async function subscriptionHistory(db,userId,environment,stamp){
  const query=await subscriptionQuery(db,environment,stamp);

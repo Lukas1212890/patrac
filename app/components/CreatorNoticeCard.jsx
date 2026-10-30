@@ -2,6 +2,7 @@
 const date=value=>new Date(value).toLocaleDateString('cs-CZ',{dateStyle:'medium'});
 export default function CreatorNoticeCard({notice}){
  const type=notice.type;
+ if(type==='registration-bonus')return <article className="p-moderation-notice"><strong>Získáváte 3 měsíce zdarma</strong><p>Děkujeme za zapojení do testování Pátrače! Registrační bonus vám odemkl hraní veřejných výprav i tvorbu vlastních. Přístup v testovacím režimu máte do <b>{date(notice.expiresAt)}</b>. Nic neplatíte a přístup se automaticky neobnovuje.</p><small>{date(notice.createdAt)}</small></article>;
  if(type==='report-resolved')return <article className="p-moderation-notice"><strong>Vaše hlášení bylo vyřízeno</strong><h3>{notice.name}</h3><p>{notice.resolution}</p><p>Kód výpravy: {notice.code}. Pokud s vyřízením nesouhlasíte, napište na patrac@stopik.cz.</p><small>{date(notice.createdAt)}</small></article>;
  if(['player-suspend','player-restore'].includes(type))return <article className="p-moderation-notice"><strong>{type==='player-suspend'?'Rozehranou výpravu pozastavil správce':'Rozehraná výprava byla obnovena'}</strong><h3>{notice.name}</h3><p>Důvod: {notice.reason}</p><p>{type==='player-suspend'?'Ve výpravě nyní nepokračujte. Čas i limit 48 hodin dál běží.':'Pokračovat můžete v sekci Moje hry. Čas ani limit 48 hodin se během pozastavení nezastavovaly.'}</p><p>Podpora: patrac@stopik.cz · kód {notice.code}</p><small>{date(notice.createdAt)}</small></article>;
 

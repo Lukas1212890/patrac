@@ -2,7 +2,7 @@
 // Only selected user-facing fields leave the API, never the admin's internal audit data.
 /** @param {any} db @param {string} userId @param {'test'|'live'|null} [environment] */
 export async function creatorNotices(db,userId,environment=null){
- const tables=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('patrac_admin_audit','patrac_creator_rewards','patrac_review_notices','patrac_moderation_notices')").all();
+ const tables=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('patrac_admin_audit','patrac_creator_rewards','patrac_review_notices','patrac_moderation_notices','patrac_registration_bonus')").all();
  const available=new Set(tables.results.map(r=>r.name)),notices=[];
  if(available.has('patrac_admin_audit')){
   const rows=await db.prepare(`SELECT id,action,details,created_at FROM patrac_admin_audit
@@ -33,6 +33,10 @@ export async function creatorNotices(db,userId,environment=null){
  if(available.has('patrac_moderation_notices')){
   const rows=await db.prepare("SELECT id,type,payload,created_at FROM patrac_moderation_notices WHERE user_id=? AND environment IN (?,'all') ORDER BY created_at DESC,id DESC LIMIT 50").bind(userId,environment).all();
   for(const r of rows.results){const p=JSON.parse(r.payload);notices.push({id:'moderation:'+r.id,type:r.type,createdAt:r.created_at,code:p.code,name:p.name,...(r.type==='report-resolved'?{resolution:p.resolution}:{reason:p.reason})});}
+ }
+ if(environment==='test'&&available.has('patrac_registration_bonus')){
+  const bonus=await db.prepare('SELECT granted_at,access_until FROM patrac_registration_bonus WHERE user_id=? AND granted_at IS NOT NULL').bind(userId).first();
+  if(bonus)notices.push({id:'registration-bonus:'+userId,type:'registration-bonus',months:3,createdAt:bonus.granted_at,expiresAt:bonus.access_until});
  }
  notices.sort((a,b)=>b.createdAt-a.createdAt||a.id.localeCompare(b.id));
  return{notices:notices.slice(0,50)};
