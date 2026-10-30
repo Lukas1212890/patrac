@@ -24,3 +24,5 @@
 @media(max-width:900px){.pa-show-detail>.pa-users{display:none}.pa-grid:not(.pa-show-detail)>.pa-detail{display:none}.pa-back-accounts{display:flex;align-items:center;gap:8px;min-height:44px;padding:10px 14px;margin-bottom:20px;border:1px solid #c7d5ef;border-radius:9px;background:#eff3ff;color:#2348df;font-weight:700}}
 
 .pa-source-registration{background:#e3fa95;border-color:#aac84b;color:#354d00}
+
+.pa-push{margin-bottom:24px}.pa-push .pa-card-heading h2{display:flex;align-items:center;gap:9px}.pa-push p{font-size:13px}.pa-push small{display:block;color:#647293;line-height:1.5;margin-top:14px}.pa-push-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.pa-push-actions .pa-clear-filters{margin:0;min-height:46px}

@@ -1,3 +1,4 @@
+import {runAdminPush} from './lib/adminPush.mjs';
 import {sweepDeletedExpeditions} from './lib/expeditionLifecycle.mjs';
 import {expireAttempts} from './lib/expiredAttempts.mjs';
 import { env, withRuntime } from './runtime';
@@ -11,7 +12,7 @@ import * as account from './account';
 import * as config from './config';
 import {createCreatorRewards} from './lib/creatorRewards.mjs';
 const handler = {
-  async scheduled(){await expireAttempts(env.DB);await sweepDeletedExpeditions(env.DB,env.BUCKET);await createCreatorRewards({db:env.DB,env}).sweep();},
+  async scheduled(){await expireAttempts(env.DB);await sweepDeletedExpeditions(env.DB,env.BUCKET);await createCreatorRewards({db:env.DB,env}).sweep();await runAdminPush(env.DB,env.PATRAC_AUTH_SECRET);},
   async fetch(request: Request): Promise<Response> {
     const origin = request.headers.get('origin');
     if (origin && !allowedOrigin(origin, env.PATRAC_ALLOWED_ORIGINS)) return Response.json({ error: 'Nepovolený původ požadavku.' }, { status: 403 });
@@ -59,4 +60,9 @@ const handler = {
   }
 };
 
-export default {fetch:(request:Request)=>withRuntime(()=>handler.fetch(request)),scheduled:()=>withRuntime(()=>handler.scheduled())};
+export default {fetch:async(request:Request,_bindings:Cloudflare.Env,ctx:ExecutionContext)=>{
+ const response=await withRuntime(()=>handler.fetch(request));
+ const path=new URL(request.url).pathname;
+ if(request.method==='POST'&&(path==='/api/auth/sign-up/email'||path.startsWith('/api/billing/')))ctx.waitUntil(withRuntime(()=>runAdminPush(env.DB,env.PATRAC_AUTH_SECRET)));
+ return response;
+},scheduled:()=>withRuntime(()=>handler.scheduled())};

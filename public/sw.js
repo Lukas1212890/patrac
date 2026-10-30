@@ -7,3 +7,13 @@ self.addEventListener('fetch', event => {
   if (event.request.mode === 'navigate') { event.respondWith(fetch(event.request).catch(() => caches.match('/offline.html'))); return; }
   if (['/patrac-mobile.webp', '/patrac-forest.webp'].includes(url.pathname) || url.pathname.startsWith('/vendor/')) event.respondWith(caches.match(event.request).then(hit => hit || fetch(event.request).then(response => { if (response.ok) { const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(event.request, copy)); } return response; })));
 });
+
+self.addEventListener('push',event=>{
+ let data={};try{data=event.data?.json()||{};}catch{}
+ const title=typeof data.title==='string'?data.title:'Pátrač – administrace';
+ event.waitUntil(self.registration.showNotification(title,{body:typeof data.body==='string'?data.body:'Nové upozornění v administraci.',icon:'/patrac-icon-192.png',badge:'/patrac-icon-192.png',tag:typeof data.tag==='string'?data.tag:'patrac-admin',data:{url:'/admin'}}));
+});
+self.addEventListener('notificationclick',event=>{
+ event.notification.close();
+ event.waitUntil((async()=>{const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});for(const client of windows){const url=new URL(client.url);if(url.origin===self.location.origin&&url.pathname==='/admin'){await client.focus();return;}}await self.clients.openWindow('/admin');})());
+});

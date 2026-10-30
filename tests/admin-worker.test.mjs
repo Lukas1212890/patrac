@@ -23,6 +23,13 @@ test('Worker HTTP admin routes enforce origins and real session roles before exp
     await db.prepare('INSERT INTO patrac_admin_accounts(user_id,created_at) VALUES(?,?)').bind('admin',stamp).run();
     async function login(id){const r=await request('/api/auth/sign-in/email',{email:id+'@example.com',password});assert.equal(r.status,200,await r.clone().text());return r.headers.get('set-auth-token');}
     const admin=await login('admin'),regular=await login('regular');
+    assert.equal((await request('/api/admin/push')).status,401);
+    assert.equal((await request('/api/admin/push',null,regular)).status,403);
+    const pushConfigResponse=await request('/api/admin/push',null,admin);assert.equal(pushConfigResponse.status,200);const pushConfig=await pushConfigResponse.json();assert.match(pushConfig.publicKey,/^[A-Za-z0-9_-]{87}$/);assert.deepEqual(Object.keys(pushConfig),['publicKey']);
+    assert.equal((await request('/api/admin/push',{action:'subscribe'},regular)).status,403);
+    assert.equal((await request('/api/admin/push',{action:'subscribe'},admin,'')).status,403);
+    assert.equal((await request('/api/admin/push',{action:'subscribe'},admin)).status,400);
+
     assert.equal((await request('/api/admin/users',null,regular)).status,403);
     assert.equal((await request('/api/admin/users',null,admin,'https://untrusted.example')).status,403);
     const result=await request('/api/admin/users',null,admin);assert.equal(result.status,200);assert.equal(result.headers.get('cache-control'),'no-store, private');

@@ -1,3 +1,4 @@
+import {pushConfig,savePushSubscription,removePushSubscription,testAdminPush} from './lib/adminPush.mjs';
 import {GameError} from './lib/patrac-engine.mjs';
 import {reportsList,resolveReport,hideReportedComment} from './lib/contentModeration.mjs';
 import {expireAttempts} from './lib/expiredAttempts.mjs';
@@ -31,6 +32,11 @@ async function readAdminBody(request: Request) {
 export async function adminRequest(request: Request) {
   try {
     const url = new URL(request.url), api = service();
+    if(url.pathname==='/api/admin/push'){
+      const actor=(await api.session(request)).user;
+      if(request.method==='GET'){const config=await pushConfig(env.DB,env.PATRAC_AUTH_SECRET);return Response.json({publicKey:config.public_key});}
+      if(request.method==='POST'){const input=await readAdminBody(request);if(input.action==='status'){if(typeof input.endpoint!=='string'||input.endpoint.length>2048)throw new GameError('Neplatné zařízení.');return Response.json({enabled:!!await env.DB.prepare('SELECT id FROM patrac_admin_push WHERE user_id=? AND endpoint=?').bind(actor.id,input.endpoint).first()});}if(input.action==='subscribe')return Response.json(await savePushSubscription(env.DB,actor.id,input,env.PATRAC_AUTH_SECRET));if(input.action==='unsubscribe')return Response.json(await removePushSubscription(env.DB,actor.id,input.endpoint));if(input.action==='test')return Response.json(await testAdminPush(env.DB,env.PATRAC_AUTH_SECRET,actor.id,input.endpoint));throw new GameError('Neplatná akce.');}
+    }
     if(url.pathname==='/api/admin/reports'){const actor=(await api.session(request,request.method==='POST')).user;if(request.method==='GET')return Response.json(await reportsList(env.DB,{status:url.searchParams.get('status')||'pending',environment:url.searchParams.get('environment')||'all',page:Number(url.searchParams.get('page')||0)}));if(request.method==='POST'){const input=await readAdminBody(request);return Response.json(input.action==='hide-comment'?await hideReportedComment({db:env.DB,actor,input}):await resolveReport(env.DB,input,Date.now(),actor.id));}}
     if(url.pathname==='/api/admin/runtime-mode'){
       const actor=(await api.session(request,request.method==='POST')).user;
