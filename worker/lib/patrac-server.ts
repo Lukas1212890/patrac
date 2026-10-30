@@ -1,3 +1,4 @@
+import {restartPrivatePlay,privateOwnerHistory} from './privateReplay.mjs';
 import {attemptStartedAt,restoreUnstartedDeparture} from '../../shared/playLimits.mjs';
 import {activePlayerCount,activePlayersQuery,activePlayMessage} from './activeExpeditionPlayers.mjs';
 import {routeInfoFor} from '../../shared/routeEstimate.mjs';
@@ -96,7 +97,9 @@ export async function viewExpedition(request: Request, code: string) {
     const activePlayers=await activePlayerCount(db(),code),publicLocked=game.visibility==='public'&&activePlayers>0;
     const playerNames=game.visibility==='public'?"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_public_attempts a ON a.team_id=t.id LEFT JOIN patrac_auth_user u ON u.id=a.user_id WHERE t.code=? AND a.environment=?":"SELECT json_set(t.payload,'$.name',COALESCE(u.name,json_extract(t.payload,'$.name'))) AS payload FROM patrac_teams t LEFT JOIN patrac_auth_user u ON u.id=t.user_id WHERE t.code = ?";
     const rows=await db().prepare(playerNames).bind(...(game.visibility==='public'?[code,billingEnvironment(env)]:[code])).all<any>();
+    const archived=game.visibility==='public'?[]:await privateOwnerHistory(db(),code);
     const teams = rows.results.map(r => JSON.parse(r.payload)).map(t => ({ ...t, ...score(game, t, now), timings: stationTimings(game, t) }));
+    teams.push(...archived);
     teams.sort((a, b) => (a.finishedAt ? 0 : 1) - (b.finishedAt ? 0 : 1) || (a.finishedAt && b.finishedAt ? (game.mode === 'race' ? a.totalMs - b.totalMs : a.finishedAt - b.finishedAt) : b.index - a.index) || a.joinedAt - b.joinedAt);
     const expanded = structuredClone(game);
     if (new URL(request.url).searchParams.get('photos') === '1') {
@@ -129,7 +132,7 @@ export async function changeExpedition(request: Request, code: string) {
     return json(await removeExpedition(db(),env.BUCKET,{code,userId:account!.id,version:input.version,confirmation:input.confirmation}));
   }
   if (game.status === 'deleting') throw new GameError('Výprava se právě maže.',410);
-  if (game.visibility==='public'&&['join','begin','arrive','hint','answer','solution','abandon'].includes(input.action))throw new GameError('Veřejnou výpravu zahajte přihlášeným účtem z mapy.',403);
+  if (game.visibility==='public'&&['join','begin','restart','arrive','hint','answer','solution','abandon'].includes(input.action))throw new GameError('Veřejnou výpravu zahajte přihlášeným účtem z mapy.',403);
   if (input.action === 'join') {
     const account=await creatorIdentity(request,true);
     if(await db().prepare('SELECT code FROM patrac_creator_games WHERE code=? AND creator_id=?').bind(code,account!.id).first())return json({ok:true,role:'owner'});
@@ -183,6 +186,7 @@ export async function changeExpedition(request: Request, code: string) {
     return json({ok:true});
   }
   if (who.role !== 'team') throw new GameError('Chybí přístupový klíč výpravy.', 403);
+  if(input.action==='restart'){const account=await creatorIdentity(request,true);return json(await restartPrivatePlay(db(),{code,userId:account!.id,nickname:account!.nickname,teamId:input.teamId,game}));}
   // Compare-and-swap makes repeated requests and simultaneous hint taps safe.
   for (let attempt = 0; attempt < 5; attempt++) {
     const teamRow = attempt === 0 ? who.teamRow : await db().prepare('SELECT * FROM patrac_teams WHERE id = ?').bind(who.team.id).first<any>();
