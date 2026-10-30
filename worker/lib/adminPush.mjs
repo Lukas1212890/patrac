@@ -60,22 +60,28 @@ export async function captureAdminPush(db){
   ]);
  }
 }
-export async function sendAdminPush(db,secret,{fetcher=fetch,now=Date.now(),limit=10}={}){
+export async function sendAdminPush(db,secret,{fetcher=fetch,now=Date.now(),limit=10,eventId=null}={}){
  await ensureAdminPush(db);
- const config=await db.prepare('SELECT * FROM patrac_push_config WHERE id=1').first();if(!config)return;
- const due=await db.prepare(`SELECT d.*,s.endpoint,s.p256dh,s.auth,e.payload FROM patrac_push_deliveries d JOIN patrac_admin_push s ON s.id=d.subscription_id JOIN patrac_admin_accounts a ON a.user_id=s.user_id JOIN patrac_auth_user u ON u.id=s.user_id JOIN patrac_push_events e ON e.id=d.event_id WHERE d.done_at IS NULL AND d.next_at<=? AND d.attempts<5 AND u.emailVerified=1 AND e.created_at>? ORDER BY e.created_at LIMIT ?`).bind(now,now-24*3600000,limit).all();
+ const config=await db.prepare('SELECT * FROM patrac_push_config WHERE id=1').first();if(!config)return [];
+ const outcomes=[];
+ const due=await db.prepare(`SELECT d.*,s.endpoint,s.p256dh,s.auth,e.payload FROM patrac_push_deliveries d JOIN patrac_admin_push s ON s.id=d.subscription_id JOIN patrac_admin_accounts a ON a.user_id=s.user_id JOIN patrac_auth_user u ON u.id=s.user_id JOIN patrac_push_events e ON e.id=d.event_id WHERE d.done_at IS NULL AND d.next_at<=? AND d.attempts<5 AND u.emailVerified=1 AND e.created_at>? AND (? IS NULL OR e.id=?) ORDER BY e.created_at LIMIT ?`).bind(now,now-24*3600000,eventId,eventId,limit).all();
  const privateKey=await unseal(config.private_key,secret);
  for(const row of due.results){
   const claim=crypto.randomUUID();
   const reserved=await db.prepare('UPDATE patrac_push_deliveries SET claim=?,attempts=attempts+1,next_at=? WHERE event_id=? AND subscription_id=? AND done_at IS NULL AND next_at<=?').bind(claim,now+120000,row.event_id,row.subscription_id,now).run();if(!reserved.meta.changes)continue;
+  let stage='PUSH_ENCRYPTION';
   try{
    const request=await buildPushPayload({data:row.payload,options:{ttl:3600,urgency:'normal'}},{endpoint:row.endpoint,expirationTime:null,keys:{p256dh:row.p256dh,auth:row.auth}},{subject:'mailto:patrac@stopik.cz',publicKey:config.public_key,privateKey});
-   const response=await fetcher(row.endpoint,{method:request.method,headers:request.headers,body:request.body,redirect:'error',signal:AbortSignal.timeout(8000)});
-   if(response.status===404||response.status===410){await removeExpiredPush(db,row.subscription_id);continue;}
-   if(!response.ok)throw Error('Push transport failed');
+   stage='PUSH_NETWORK';
+   const headers=new Headers(request.headers);headers.delete('content-length');
+   const response=await fetcher(row.endpoint,{method:'POST',headers,body:request.body,redirect:'manual',signal:AbortSignal.timeout(8000)});
+   if(response.status===404||response.status===410){await removeExpiredPush(db,row.subscription_id);outcomes.push({eventId:row.event_id,code:'PUSH_SUBSCRIPTION_EXPIRED',status:response.status});continue;}
+   if(!response.ok){let reason='';try{const text=(await response.text()).slice(0,1024);let candidate;try{candidate=JSON.parse(text).reason;}catch{candidate=text;}if(typeof candidate==='string'&&/^[A-Za-z0-9_. -]{1,80}$/.test(candidate))reason=candidate;}catch{}throw Object.assign(Error('Push provider rejected request'),{pushCode:'PUSH_HTTP_'+response.status,pushStatus:response.status,pushReason:reason});}
    await db.prepare('UPDATE patrac_push_deliveries SET done_at=? WHERE event_id=? AND subscription_id=? AND claim=?').bind(now,row.event_id,row.subscription_id,claim).run();
-  }catch{await db.prepare('UPDATE patrac_push_deliveries SET next_at=? WHERE event_id=? AND subscription_id=? AND claim=?').bind(now+Math.min(3600000,60000*2**row.attempts),row.event_id,row.subscription_id,claim).run();}
+   outcomes.push({eventId:row.event_id,code:'PUSH_SENT',status:response.status});
+  }catch(error){const failure={eventId:row.event_id,code:error.pushCode||(['AbortError','TimeoutError'].includes(error.name)?'PUSH_TIMEOUT':stage),status:error.pushStatus||null,reason:error.pushReason||''};outcomes.push(failure);console.warn('Admin push failed',{code:failure.code,status:failure.status,reason:failure.reason});await db.prepare('UPDATE patrac_push_deliveries SET next_at=? WHERE event_id=? AND subscription_id=? AND claim=?').bind(now+Math.min(3600000,60000*2**row.attempts),row.event_id,row.subscription_id,claim).run();}
  }
+ return outcomes;
 }
 async function removeExpiredPush(db,id){await db.batch([db.prepare('DELETE FROM patrac_push_deliveries WHERE subscription_id=?').bind(id),db.prepare('DELETE FROM patrac_admin_push WHERE id=?').bind(id)]);}
 export async function runAdminPush(db,secret){try{await captureAdminPush(db);await sendAdminPush(db,secret);await db.batch([db.prepare('DELETE FROM patrac_push_deliveries WHERE event_id IN (SELECT id FROM patrac_push_events WHERE created_at<?)').bind(Date.now()-30*86400000),db.prepare("UPDATE patrac_push_events SET payload='{}' WHERE created_at<? AND payload<>'{}'").bind(Date.now()-30*86400000)]);}catch{console.error('Admin push processing deferred');}}
@@ -83,7 +89,7 @@ export async function testAdminPush(db,secret,userId,endpoint){
  await ensureAdminPush(db);const s=await db.prepare('SELECT id FROM patrac_admin_push WHERE user_id=? AND endpoint=?').bind(userId,endpoint).first();if(!s)throw new GameError('Nejprve zapněte upozornění na tomto zařízení.',409);
  const recent=await db.prepare("SELECT COUNT(*) AS n FROM patrac_push_events WHERE id LIKE ? AND created_at>?").bind('test:'+userId+':%',Date.now()-60000).first();if(recent.n>=3)throw new GameError('Zkoušku opakujte za minutu.',429);
  const id='test:'+userId+':'+crypto.randomUUID(),stamp=Date.now();await db.batch([db.prepare('INSERT INTO patrac_push_events VALUES(?,?,?)').bind(id,JSON.stringify({title:'Pátrač – upozornění fungují',body:'Sem vám budou chodit nové registrace a potvrzené platby.',tag:id,url:'/admin'}),stamp),db.prepare('INSERT INTO patrac_push_deliveries(event_id,subscription_id) VALUES(?,?)').bind(id,s.id)]);
- await sendAdminPush(db,secret);
- const result=await db.prepare('SELECT done_at FROM patrac_push_deliveries WHERE event_id=?').bind(id).first();if(!result?.done_at)throw new GameError('Zkušební upozornění se zatím nepodařilo odeslat. Zkontrolujte oprávnění zařízení a zkuste to později.',503);
+ const outcomes=await sendAdminPush(db,secret,{eventId:id}),outcome=outcomes.find(o=>o.eventId===id);
+ const result=await db.prepare('SELECT done_at FROM patrac_push_deliveries WHERE event_id=?').bind(id).first();if(!result?.done_at){const code=outcome?.code||'PUSH_PENDING',detail=outcome?.reason?' ('+outcome.reason+')':'';const message=code==='PUSH_SUBSCRIPTION_EXPIRED'?'Odběr tohoto zařízení už není platný. Zapněte upozornění znovu.':code.startsWith('PUSH_HTTP_')?'Služba upozornění odmítla odeslání. Kód: '+code+detail+'. Oprávnění telefonu je povolené.':code==='PUSH_ENCRYPTION'?'Server nedokázal připravit šifrované upozornění. Kód: '+code+'.':code==='PUSH_NETWORK'||code==='PUSH_TIMEOUT'?'Server se nedokázal spojit se službou upozornění. Kód: '+code+'.':'Zkušební zpráva zatím nebyla odeslána. Kód: '+code+'.';throw Object.assign(new GameError(message,503),{code});}
  return{ok:true};
 }
