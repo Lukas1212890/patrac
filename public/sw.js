@@ -11,7 +11,7 @@ self.addEventListener('fetch', event => {
 self.addEventListener('push',event=>{
  let data={};try{data=event.data?.json()||{};}catch{}
  const title=typeof data.title==='string'?data.title:'Pátrač – administrace';
- event.waitUntil(self.registration.showNotification(title,{body:typeof data.body==='string'?data.body:'Nové upozornění v administraci.',icon:'/patrac-icon-192.png',badge:'/patrac-icon-192.png',tag:typeof data.tag==='string'?data.tag:'patrac-admin',data:{url:'/admin'}}));
+ event.waitUntil(self.registration.showNotification(title,{body:typeof data.body==='string'?data.body:'Nové upozornění v administraci.',icon:'/patrac-admin-icon-192.png',badge:'/patrac-admin-icon-192.png',tag:typeof data.tag==='string'?data.tag:'patrac-admin',data:{url:'/admin'}}));
 });
 self.addEventListener('notificationclick',event=>{
  event.notification.close();
