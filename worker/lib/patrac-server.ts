@@ -1,4 +1,4 @@
-import {attemptStartedAt} from '../../shared/playLimits.mjs';
+import {attemptStartedAt,restoreUnstartedDeparture} from '../../shared/playLimits.mjs';
 import {activePlayerCount,activePlayersQuery,activePlayMessage} from './activeExpeditionPlayers.mjs';
 import {routeInfoFor} from '../../shared/routeEstimate.mjs';
 import {validatedRouteInfo} from './routeInfo.mjs';
@@ -106,6 +106,8 @@ export async function viewExpedition(request: Request, code: string) {
   }
   if (game.visibility==='public') return json({role:'guest',game:meta,now});
   if (who.role === 'team') {
+    const restored=restoreUnstartedDeparture(game,who.team);
+    if(restored!==who.team){const repaired=await db().prepare('UPDATE patrac_teams SET payload=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(restored),who.teamRow.id,who.teamRow.version).run();if(!repaired.meta.changes)throw new GameError('Průběh se změnil. Obnovte výpravu.',409);who.team=restored;}
     if(new URL(request.url).searchParams.get('summary')==='1')return json({role:'team',game:meta,team:{name:who.team.name,index:who.team.index,finishedAt:who.team.finishedAt,abandonedAt:who.team.abandonedAt,endReason:who.team.endReason},now});
     const counts = await db().prepare("SELECT COUNT(*) as total, SUM(CASE WHEN json_extract(payload, '$.finishedAt') IS NOT NULL THEN 1 ELSE 0 END) as finished FROM patrac_teams WHERE code = ?").bind(code).first();
     const projection = teamProjection(game, who.team, now);

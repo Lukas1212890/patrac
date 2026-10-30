@@ -7,3 +7,10 @@ export function expireAttempt(game, team, now) {
   const at = start + ATTEMPT_LIMIT_MS;
   return {...team, abandonedAt: at, endReason: 'timeout', events: [...team.events, {type: 'timeout', index: team.index, at}]};
 }
+
+// Only undo the former pre-start cancellation bug; never restore a started attempt.
+export function restoreUnstartedDeparture(game,team){
+ if(!team.abandonedAt||team.finishedAt||team.arrivedAt||team.lastWrongAt||team.endReason==='timeout'||attemptStartedAt(game,team)!==null||team.index!==0||team.penaltyMs>0||(team.events||[]).some(e=>e.type!=='abandon'))return team;
+ const restored={...team,individualStart:true,events:(team.events||[]).filter(e=>e.type!=='abandon')};
+ delete restored.abandonedAt;delete restored.endReason;return restored;
+}

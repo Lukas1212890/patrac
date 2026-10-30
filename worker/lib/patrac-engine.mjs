@@ -1,4 +1,4 @@
-import {expireAttempt,attemptStartedAt} from '../../shared/playLimits.mjs';
+import {expireAttempt,attemptStartedAt,restoreUnstartedDeparture} from '../../shared/playLimits.mjs';
 import { parseCoordinates } from './externalNavigation.mjs';
 import { distanceTo } from './navigationMath.js';
 export class GameError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
@@ -49,12 +49,14 @@ export function checkArrival(position, station, now) {
 }
 export function newTeam(id, name, now) { return { id, name, joinedAt: now, index: 0, arrivedAt: null, finishedAt: null, penaltyMs: 0, events: [], lastWrongAt: null }; }
 export function applyAction(game, team, action, now) {
+  team=restoreUnstartedDeparture(game,team);
   if (team.finishedAt) return team;
   const expired = expireAttempt(game, team, now);
   if (expired !== team) return expired;
   if (team.abandonedAt) { if (action.action === 'abandon' && action.confirm === true) return team; throw new GameError('Tento pokus byl ukončený a nelze v něm pokračovat.', 409); }
   if (action.action === 'abandon') {
     if (action.confirm !== true) throw new GameError('Potvrďte trvalé ukončení svého pokusu.');
+    if(attemptStartedAt(game,team)===null)return team;
     return { ...structuredClone(team), abandonedAt: now, events: [...team.events, { type: 'abandon', index: team.index, at: now }] };
   }
   if(action.action==='begin'){
@@ -98,13 +100,13 @@ export function applyAction(game, team, action, now) {
   return next;
 }
 export function score(game, team, now) {
-  team = expireAttempt(game, team, now);
+  team = expireAttempt(game, restoreUnstartedDeparture(game,team), now);
   const startedAt = attemptStartedAt(game,team);
   const elapsed = startedAt ? Math.max(0, (team.finishedAt || team.abandonedAt || now) - startedAt) : 0;
   return { elapsedMs: elapsed, totalMs: elapsed + (game.mode === 'race' ? team.penaltyMs : 0) };
 }
 export function teamProjection(game, team, now) {
-  team = expireAttempt(game, team, now);
+  team = expireAttempt(game, restoreUnstartedDeparture(game,team), now);
   const station = game.status === 'running' && !team.finishedAt && !team.abandonedAt ? game.stations[team.index] : null;
   return { ...team, ...score(game, team, now), ...(team.finishedAt ? { finishText: game.finishText || '' } : {}), station: station ? {
     id: station.id, name: station.name, lat: station.lat, lng: station.lng, radius: station.radius,
