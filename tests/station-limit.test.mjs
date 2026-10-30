@@ -4,9 +4,9 @@ import {readFileSync} from 'node:fs';
 import * as client from '../app/lib/patrac-engine.mjs';
 import * as worker from '../worker/lib/patrac-engine.mjs';
 const station={name:'Místo',lat:49.3,lng:17.39,radius:25,question:'Kolik?',answer:'Jedna',hints:[]};
-test('client and server accept 30 stations but reject zero and 31, for both game modes',()=>{
+test('client and server accept 30 stations but reject zero and 31, for timed expeditions',()=>{
  assert.equal(readFileSync(new URL('../app/lib/patrac-engine.mjs',import.meta.url),'utf8'),readFileSync(new URL('../worker/lib/patrac-engine.mjs',import.meta.url),'utf8'));
- for(const engine of [client,worker])for(const mode of ['race','treasure']){
+ for(const engine of [client,worker])for(const mode of ['race']){
  assert.equal(engine.MAX_STATIONS,30);
  assert.equal(engine.validateExpedition({name:'Výprava',mode,stations:Array.from({length:30},()=>({...station}))}).stations.length,30);
  for(const n of [0,31,50])assert.throws(()=>engine.validateExpedition({name:'Výprava',mode,stations:Array.from({length:n},()=>({...station}))}),/1 až 30 stanovišť/);

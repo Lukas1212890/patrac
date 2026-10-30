@@ -1,4 +1,4 @@
-import {expireAttempt} from '../../shared/playLimits.mjs';
+import {expireAttempt,attemptStartedAt} from '../../shared/playLimits.mjs';
 import { parseCoordinates } from './externalNavigation.mjs';
 import { distanceTo } from './navigationMath.js';
 export class GameError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
@@ -16,7 +16,7 @@ export const MAX_STATIONS = 30;
 export const PENALTY_OPTIONS = [5, 10, 15, 20, 25, 30];
 export function validateExpedition(input) {
   const name = text(input.name, 100, 'název výpravy');
-  if (!['race', 'treasure'].includes(input.mode)) throw new GameError('Vyberte režim výpravy.');
+  if (input.mode!=='race') throw new GameError('Výpravy se hrají na čas.');
   if (!Array.isArray(input.stations) || input.stations.length < 1 || input.stations.length > MAX_STATIONS) throw new GameError(`Výprava musí mít 1 až ${MAX_STATIONS} stanovišť.`);
   const stations = input.stations.map((s, index) => {
     const coords = parseCoordinates(s);
@@ -49,7 +49,6 @@ export function checkArrival(position, station, now) {
 }
 export function newTeam(id, name, now) { return { id, name, joinedAt: now, index: 0, arrivedAt: null, finishedAt: null, penaltyMs: 0, events: [], lastWrongAt: null }; }
 export function applyAction(game, team, action, now) {
-  if (game.status !== 'running') throw new GameError('Výprava ještě neběží.', 409);
   if (team.finishedAt) return team;
   const expired = expireAttempt(game, team, now);
   if (expired !== team) return expired;
@@ -58,6 +57,14 @@ export function applyAction(game, team, action, now) {
     if (action.confirm !== true) throw new GameError('Potvrďte trvalé ukončení svého pokusu.');
     return { ...structuredClone(team), abandonedAt: now, events: [...team.events, { type: 'abandon', index: team.index, at: now }] };
   }
+  if(action.action==='begin'){
+    if(action.confirm!==true)throw new GameError('Potvrďte zahájení hry.');
+    if(attemptStartedAt(game,team)!==null)return team;
+    if(!['waiting','running'].includes(game.status))throw new GameError('Výprava není dostupná.',409);
+    return {...structuredClone(team),individualStart:true,startedAt:now,events:[...team.events,{type:'start',at:now}]};
+  }
+  if(game.status!=='running')throw new GameError('Výprava ještě neběží.',409);
+  if(attemptStartedAt(game,team)===null)throw new GameError('Nejprve zahajte hru tlačítkem Zahájit hru.',409);
   if (action.index !== team.index) throw new GameError('Stanoviště se změnilo. Obnovte průběh.', 409);
   const next = structuredClone(team), station = game.stations[team.index];
   if (action.action === 'arrive') {
@@ -92,7 +99,7 @@ export function applyAction(game, team, action, now) {
 }
 export function score(game, team, now) {
   team = expireAttempt(game, team, now);
-  const startedAt = team.startedAt ?? game.startedAt;
+  const startedAt = attemptStartedAt(game,team);
   const elapsed = startedAt ? Math.max(0, (team.finishedAt || team.abandonedAt || now) - startedAt) : 0;
   return { elapsedMs: elapsed, totalMs: elapsed + (game.mode === 'race' ? team.penaltyMs : 0) };
 }
@@ -110,7 +117,7 @@ export function teamProjection(game, team, now) {
 export function stationTimings(game, team) {
   return game.stations.slice(0, team.index + (team.arrivedAt ? 1 : 0)).map((station, index) => {
     const arrive = team.events.find(e => e.type === 'arrive' && e.index === index), solve = team.events.find(e => e.type === 'solve' && e.index === index);
-    const previous = index === 0 ? (team.startedAt ?? game.startedAt) : team.events.find(e => e.type === 'solve' && e.index === index - 1)?.at;
+    const previous = index === 0 ? attemptStartedAt(game,team) : team.events.find(e => e.type === 'solve' && e.index === index - 1)?.at;
     return { index, name: station.name, arrivedAt: arrive?.at, solvedAt: solve?.at,
       travelMs: arrive && previous ? arrive.at - previous : null, solveMs: solve && arrive ? solve.at - arrive.at : null,
       hints: team.events.filter(e => e.type === 'hint' && e.index === index), solutions: team.events.filter(e => e.type === 'solution' && e.index === index) };

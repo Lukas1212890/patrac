@@ -53,6 +53,7 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   assert.equal((await request('/api/expeditions/ABCDEFG',{action:'join',teamToken:legacyToken},players.late)).status,200);
   assert.equal((await db.prepare('SELECT user_id FROM patrac_teams WHERE id=?').bind(legacy.id).first()).user_id,'late');
   game.status='running';game.startedAt=Date.now();await db.prepare('UPDATE patrac_expeditions SET payload=? WHERE code=?').bind(JSON.stringify(game),'ABCDEFG').run();
+  assert.equal((await request('/api/expeditions/ABCDEFG',{action:'begin',confirm:true},players.player)).status,200);
   const arrive=await mf.dispatchFetch('http://localhost:8790/api/expeditions/ABCDEFG',{method:'POST',headers:{Origin:'http://localhost:3000','Content-Type':'application/json','X-Patrac-Account':players.player},body:JSON.stringify({action:'arrive',index:0,position:{lat:49.3,lng:17.39,acc:5,timestamp:Date.now()}})});assert.equal(arrive.status,200,await arrive.clone().text());
   const summary=await mf.dispatchFetch('http://localhost:8790/api/expeditions/ABCDEFG?summary=1',{headers:{Origin:'http://localhost:3000','X-Patrac-Account':players.player}});
   assert.equal(summary.status,200);const compact=await summary.json();assert.equal(compact.role,'team');assert.equal(compact.game.name,'Saved game');assert.equal(compact.team.name,'Nový');assert.deepEqual(Object.keys(compact.team).sort(),['finishedAt','index','name']);assert.equal(JSON.stringify(compact).includes('Otázka'),false);
@@ -79,36 +80,38 @@ test('real Worker requires account and paid access, verifies webhook signature, 
   assert.equal((await(await request('/api/account/notices?format=2',null,players.player)).json()).notices.some(n=>n.type==='access'),false);
   const updated=await(await request('/api/admin/users/user',null,token)).json();assert.equal(updated.billing.version,1);assert.equal(updated.audit.filter(a=>a.action==='access').length,1);
 
-  // An attached team has not received a route before start: the author can still edit everything.
+  // A joined player has not started their clock: the author can still edit the route.
   const waiting={...game,status:'waiting',startedAt:null,stations:[...game.stations,{...game.stations[0],id:'s1',name:'Druhé místo'}]};
   await db.prepare('INSERT INTO patrac_expeditions VALUES(?,?,?,0)').bind('HJKLMNP','owner-hash',JSON.stringify(waiting)).run();
   await db.prepare('INSERT INTO patrac_creator_games VALUES(?,?,?)').bind('HJKLMNP','user',stamp).run();
   assert.equal((await request('/api/expeditions/HJKLMNP',{action:'join',name:'Waiting team',teamToken:'b'.repeat(64)},players.player)).status,201);
-  const edited={...waiting,name:'Celá upravená výprava',mode:'treasure',stations:[{...waiting.stations[0],question:'Nová hádanka',answer:'nová odpověď'}]};
+  const edited={...waiting,name:'Celá upravená výprava',mode:'race',stations:[{...waiting.stations[0],question:'Nová hádanka',answer:'nová odpověď'}]};
   const saved=await request('/api/expeditions/HJKLMNP',{action:'save',game:edited,version:0},token);assert.equal(saved.status,200,await saved.clone().text());
   const newGame=(await(await request('/api/expeditions/HJKLMNP',null,token)).json()).game;
-  assert.equal(newGame.name,edited.name);assert.equal(newGame.mode,'treasure');assert.equal(newGame.stations.length,1);assert.equal(newGame.stations[0].question,'Nová hádanka');
+  assert.equal(newGame.name,edited.name);assert.equal(newGame.mode,'race');assert.equal(newGame.stations.length,1);assert.equal(newGame.stations[0].question,'Nová hádanka');
   assert.equal((await request('/api/expeditions/HJKLMNP',{action:'save',game:waiting,version:0},token)).status,409);
-  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'start'},token)).status,200);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'start'},token)).status,400);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'begin',confirm:true},players.player)).status,200);
   assert.equal((await request('/api/expeditions/HJKLMNP',{action:'save',game:waiting,version:1},token)).status,409);
 
   // Finishing does not close the route, and a later team gets its own clock.
   await db.prepare("UPDATE patrac_teams SET payload=json_set(payload,'$.finishedAt',?,'$.index',1) WHERE code=?").bind(Date.now()-1000,'HJKLMNP').run();
   const lateJoin=await request('/api/expeditions/HJKLMNP',{action:'join',name:'Další skupina',teamToken:'c'.repeat(64)},players.late);assert.equal(lateJoin.status,201);
-  const late=await db.prepare("SELECT payload FROM patrac_teams WHERE code=? AND name_key=?").bind('HJKLMNP','account:late').first();assert.ok(JSON.parse(late.payload).startedAt>=stamp);
+  const late=await db.prepare("SELECT payload FROM patrac_teams WHERE code=? AND name_key=?").bind('HJKLMNP','account:late').first();assert.equal(JSON.parse(late.payload).startedAt,null);assert.equal((await request('/api/expeditions/HJKLMNP',{action:'begin',confirm:true},players.late)).status,200);const startedLate=await db.prepare("SELECT payload FROM patrac_teams WHERE code=? AND name_key=?").bind('HJKLMNP','account:late').first();assert.ok(JSON.parse(startedLate.payload).startedAt>=stamp);
   const profile=await(await request('/api/account',null,token)).json();assert.equal(profile.expeditionCount,2);assert.equal(profile.expeditionLimit,3);
   // The final free slot is reserved atomically even from simultaneous requests.
   const creations=await Promise.all([request('/api/expeditions',edited,token),request('/api/expeditions',edited,token)]);
   assert.deepEqual(creations.map(r=>r.status).sort(),[201,409]);assert.equal((await(await request('/api/account',null,token)).json()).expeditionCount,3);
-  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'HJKLMNP'})).status,401);
-  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'WRONG'} ,token)).status,400);
+  const privateVersion=(await(await request('/api/expeditions/HJKLMNP',null,token)).json()).version;
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:privateVersion,confirmation:'HJKLMNP'})).status,401);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:privateVersion,confirmation:'WRONG'} ,token)).status,400);
   assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:0,confirmation:'HJKLMNP'},token)).status,409);
   const bucket=await mf.getR2Bucket('BUCKET');await bucket.put('hints/HJKLMNP/old-orphan','image');await bucket.put('hints/ABCDEFG/keep','other-image');
   await db.prepare("UPDATE patrac_access SET expires_at=0 WHERE user_id='user'").run();
-  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'HJKLMNP'},token)).status,409);
+  assert.equal((await request('/api/expeditions/HJKLMNP',{action:'delete',version:privateVersion,confirmation:'HJKLMNP'},token)).status,409);
   assert.ok(await bucket.head('hints/HJKLMNP/old-orphan'));
   assert.equal((await request('/api/expeditions/HJKLMNP',{action:'abandon',confirm:true},players.late)).status,200);
-  const deleted=await request('/api/expeditions/HJKLMNP',{action:'delete',version:2,confirmation:'HJKLMNP'},token);assert.equal(deleted.status,200,await deleted.clone().text());
+  const deleted=await request('/api/expeditions/HJKLMNP',{action:'delete',version:privateVersion,confirmation:'HJKLMNP'},token);assert.equal(deleted.status,200,await deleted.clone().text());
     assert.ok(await bucket.head('hints/HJKLMNP/old-orphan'));
     await db.prepare("UPDATE patrac_expeditions SET payload=json_set(payload,'$.deleteAt',?) WHERE code=?").bind(Date.now()-1,'HJKLMNP').run();
     await request('/api/account',null,token);

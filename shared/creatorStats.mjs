@@ -1,11 +1,12 @@
+import {attemptStartedAt} from './playLimits.mjs';
 // Counts attempts, never individual hint clicks. No new tracking or location history.
 export function creatorStats(game, teams, now=Date.now()) {
   const stations=game.stations.map((s,index)=>({index,name:s.name,reached:0,solved:0,hints:0,solutions:0,ended:0,solvingMs:[]}));
   let started=0,completed=0,unfinished=0,active=0,waiting=0;
   const times=[];
   for(const t of teams){
-    const start=t.startedAt??game.startedAt;
-    if(!start){waiting++;continue;}
+    const start=attemptStartedAt(game,t);
+    if(!start){if(!t.abandonedAt)waiting++;continue;}
     started++;
     const ended=!t.finishedAt&&(!!t.abandonedAt||now-start>=48*60*60*1000);
     if(t.finishedAt){completed++;const duration=t.finishedAt-start+(game.mode==='race'?(t.penaltyMs||0):0);if(duration>=0)times.push(duration);}

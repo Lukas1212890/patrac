@@ -2,7 +2,7 @@ import {ATTEMPT_LIMIT_MS} from '../../shared/playLimits.mjs';
 // One atomic update: concurrent gameplay uses the same version counter, so it cannot
 // overwrite expiration. Completed/abandoned attempts and unstarted players are untouched.
 export async function expireAttempts(db, now = Date.now()) {
-  const start = "COALESCE(json_extract(t.payload,'$.startedAt'),json_extract(e.payload,'$.startedAt'))";
+  const start = "CASE WHEN json_extract(t.payload,'$.individualStart')=1 THEN json_extract(t.payload,'$.startedAt') ELSE COALESCE(json_extract(t.payload,'$.startedAt'),json_extract(e.payload,'$.startedAt')) END";
   return db.prepare(`WITH overdue AS (
     SELECT t.id, ${start} + ? AS deadline
     FROM patrac_teams t JOIN patrac_expeditions e ON e.code=t.code
