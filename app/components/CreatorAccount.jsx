@@ -41,7 +41,7 @@ export default function CreatorAccount({ notificationState={}, user, recovery = 
     requestAnimationFrame(()=>{profileHeading.current?.focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});});
   }
   useEffect(()=>{
-    const restore=()=>{const next=profileSectionFromURL(location.href);setProfileSection(next);if(!recovery)setMode(user&&next==='password'?'password':'login');setPassword('');setRepeat('');setCurrentPassword('');setNicknamePassword('');setNicknameAck(false);setNicknameOpen(false);};
+    const restore=()=>{const next=profileSectionFromURL(location.href);setProfileSection(next);if(!recovery)setMode(user&&next==='password'?'password':'login');setPassword('');setRepeat('');setCurrentPassword('');setNicknamePassword('');setNicknameAck(false);setNicknameOpen(false);requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'instant'}));};
     restore();const request=e=>{if(PROFILE_SECTIONS.includes(e.detail)){setProfileSection(e.detail);if(!recovery)setMode(user&&e.detail==='password'?'password':'login');setPassword('');setRepeat('');setCurrentPassword('');setNicknamePassword('');setNicknameAck(false);setNicknameOpen(false);setError('');setMessage('');window.scrollTo({top:0,behavior:'instant'});}};
     window.addEventListener('popstate',restore);window.addEventListener('patrac-profile-navigate',request);return()=>{window.removeEventListener('popstate',restore);window.removeEventListener('patrac-profile-navigate',request);};
   },[recovery,user?.id]);
