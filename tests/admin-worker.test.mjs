@@ -12,7 +12,7 @@ test('Worker HTTP admin routes enforce origins and real session roles before exp
     assert.equal((await request('/api/admin/users')).status,401);
     assert.equal((await request('/api/admin/users',{action:'revoke',id:'admin'},null,'')).status,403);
     const db=await mf.getD1Database('DB');
-    for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0009_player_accounts.sql','0003_account_admin.sql']){
+    for(const file of ['0000_common_silverclaw.sql','0001_strange_vanisher.sql','0002_creator_auth.sql','0009_player_accounts.sql','0003_account_admin.sql','0004_billing.sql']){
       for(const sql of readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(sql).run();
     }
     const stamp=Date.now(),password='native-worker-admin-test-password-923',hash=await hashPassword(password);
@@ -23,6 +23,7 @@ test('Worker HTTP admin routes enforce origins and real session roles before exp
     await db.prepare('INSERT INTO patrac_admin_accounts(user_id,created_at) VALUES(?,?)').bind('admin',stamp).run();
     async function login(id){const r=await request('/api/auth/sign-in/email',{email:id+'@example.com',password});assert.equal(r.status,200,await r.clone().text());return r.headers.get('set-auth-token');}
     const admin=await login('admin'),regular=await login('regular');
+    assert.equal((await request('/api/admin/notices')).status,401);assert.equal((await request('/api/admin/notices',null,regular)).status,403);assert.equal((await request('/api/admin/notices',null,admin)).status,200);
     assert.equal((await request('/api/admin/push')).status,401);
     assert.equal((await request('/api/admin/push',null,regular)).status,403);
     const pushConfigResponse=await request('/api/admin/push',null,admin);assert.equal(pushConfigResponse.status,200);const pushConfig=await pushConfigResponse.json();assert.match(pushConfig.publicKey,/^[A-Za-z0-9_-]{87}$/);assert.deepEqual(Object.keys(pushConfig),['publicKey']);

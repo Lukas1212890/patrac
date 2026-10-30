@@ -1,3 +1,4 @@
+import {adminInbox,readAdminInbox} from './lib/adminInbox.mjs';
 import {pushConfig,savePushSubscription,removePushSubscription,testAdminPush} from './lib/adminPush.mjs';
 import {GameError} from './lib/patrac-engine.mjs';
 import {reportsList,resolveReport,hideReportedComment} from './lib/contentModeration.mjs';
@@ -32,6 +33,11 @@ async function readAdminBody(request: Request) {
 export async function adminRequest(request: Request) {
   try {
     const url = new URL(request.url), api = service();
+    if(url.pathname==='/api/admin/notices'){
+      const actor=(await api.session(request)).user;
+      if(request.method==='GET')return Response.json(await adminInbox(env.DB,actor.id,{page:Number(url.searchParams.get('page')||0),notice:url.searchParams.get('notice'),secret:env.PATRAC_AUTH_SECRET}));
+      if(request.method==='POST')return Response.json(await readAdminInbox(env.DB,actor.id,await readAdminBody(request)));
+    }
     if(url.pathname==='/api/admin/push'){
       const actor=(await api.session(request)).user;
       if(request.method==='GET'){const config=await pushConfig(env.DB,env.PATRAC_AUTH_SECRET);return Response.json({publicKey:config.public_key});}

@@ -50,12 +50,13 @@ export async function captureAdminPush(db){
  await ensureAdminPush(db);
  const config=await db.prepare('SELECT created_at FROM patrac_push_config WHERE id=1').first();if(!config)return;
  const users=await db.prepare("SELECT u.id,u.name,u.createdAt FROM patrac_auth_user u WHERE u.createdAt>=? AND NOT EXISTS(SELECT 1 FROM patrac_push_events e WHERE e.id='registration:'||u.id) ORDER BY u.createdAt LIMIT 100").bind(config.created_at).all();
- const orders=await db.prepare("SELECT o.id,o.months,o.amount,o.environment,o.paid_at FROM patrac_orders o WHERE o.paid_at>=? AND NOT EXISTS(SELECT 1 FROM patrac_push_events e WHERE e.id='payment:'||o.id) ORDER BY o.paid_at LIMIT 100").bind(config.created_at).all();
- const events=[...users.results.map(u=>({id:'registration:'+u.id,at:u.createdAt,title:'Nový hráč v Pátrači',body:'Zaregistroval se hráč '+u.name+'.'})),...orders.results.map(o=>({id:'payment:'+o.id,at:o.paid_at,title:o.environment==='test'?'TESTOVACÍ PLATBA – Pátrač':'Nová platba – Pátrač',body:(o.environment==='test'?'Testovací nákup: ':'Zaplaceno: ')+(o.amount/100).toLocaleString('cs-CZ')+' Kč · '+o.months+' '+(o.months===3?'měsíce':'měsíců')+'.'}))];
+ const orders=await db.prepare("SELECT o.id,o.months,o.amount,o.environment,o.paid_at,u.name AS nickname FROM patrac_orders o LEFT JOIN patrac_auth_user u ON u.id=o.user_id WHERE o.paid_at>=? AND NOT EXISTS(SELECT 1 FROM patrac_push_events e WHERE e.id='payment:'||o.id) ORDER BY o.paid_at LIMIT 100").bind(config.created_at).all();
+ const date=stamp=>new Date(stamp).toLocaleString('cs-CZ',{timeZone:'Europe/Prague',dateStyle:'short',timeStyle:'short'});
+ const events=[...users.results.map(u=>({id:'registration:'+u.id,at:u.createdAt,title:'Nový hráč v Pátrači',body:u.name+' · registrace '+date(u.createdAt)+'.'})),...orders.results.map(o=>({id:'payment:'+o.id,at:o.paid_at,title:o.environment==='test'?'TESTOVACÍ PLATBA – Pátrač':'Nová platba – Pátrač',body:(o.nickname||'Odstraněný účet')+' · '+(o.amount/100).toLocaleString('cs-CZ')+' Kč · '+o.months+' '+(o.months===3?'měsíce':'měsíců')+' · '+date(o.paid_at)+'.'}))];
  for(const event of events){
   const {id,at,...payload}=event;
   await db.batch([
-   db.prepare('INSERT OR IGNORE INTO patrac_push_events VALUES(?,?,?)').bind(id,JSON.stringify({...payload,tag:id,url:'/admin'}),at),
+   db.prepare('INSERT OR IGNORE INTO patrac_push_events VALUES(?,?,?)').bind(id,JSON.stringify({...payload,tag:id,url:'/admin?notice='+encodeURIComponent(id)}),at),
    db.prepare(`INSERT OR IGNORE INTO patrac_push_deliveries(event_id,subscription_id) SELECT ?,s.id FROM patrac_admin_push s JOIN patrac_admin_accounts a ON a.user_id=s.user_id WHERE s.created_at<=?`).bind(id,at)
   ]);
  }

@@ -8,6 +8,6 @@ test('push displays a tagged notification and a tap opens only admin, never a pa
  vm.runInNewContext(readFileSync('public/sw.js','utf8'),{self,URL,console});
  let pending;
  listeners.push({data:{json:()=>({title:'Nová platba',body:'Zaplaceno 199 Kč',tag:'payment:one',url:'https://example.com/private'})},waitUntil:p=>pending=p});await pending;
- assert.equal(shown[0][0],'Nová platba');assert.equal(shown[0][1].tag,'payment:one');assert.equal(shown[0][1].data.url,'/admin');
- let closed=false;listeners.notificationclick({notification:{close:()=>closed=true,data:{url:'https://example.com'}},waitUntil:p=>pending=p});await pending;assert.equal(closed,true);assert.deepEqual(opened,['/admin']);
+ assert.equal(shown[0][0],'Nová platba');assert.equal(shown[0][1].tag,'payment:one');assert.equal(shown[0][1].data.id,'payment:one');
+ let closed=false;listeners.notificationclick({notification:{close:()=>closed=true,data:{url:'https://example.com'}},waitUntil:p=>pending=p});await pending;assert.equal(closed,true);assert.deepEqual(opened,['/admin']);listeners.notificationclick({notification:{close(){},data:{id:'payment:one'}},waitUntil:p=>pending=p});await pending;assert.equal(opened[1],'/admin?notice=payment%3Aone');
 });

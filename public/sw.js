@@ -8,12 +8,13 @@ self.addEventListener('fetch', event => {
   if (['/patrac-mobile.webp', '/patrac-forest.webp'].includes(url.pathname) || url.pathname.startsWith('/vendor/')) event.respondWith(caches.match(event.request).then(hit => hit || fetch(event.request).then(response => { if (response.ok) { const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(event.request, copy)); } return response; })));
 });
 
+function adminNoticeId(data){const id=typeof data?.tag==='string'?data.tag:'';return /^(registration|payment):[A-Za-z0-9_-]{1,128}$/.test(id)?id:null;}
 self.addEventListener('push',event=>{
  let data={};try{data=event.data?.json()||{};}catch{}
  const title=typeof data.title==='string'?data.title:'Pátrač – administrace';
- event.waitUntil(self.registration.showNotification(title,{body:typeof data.body==='string'?data.body:'Nové upozornění v administraci.',icon:'/patrac-admin-icon-192.png',badge:'/patrac-admin-icon-192.png',tag:typeof data.tag==='string'?data.tag:'patrac-admin',data:{url:'/admin'}}));
+ event.waitUntil(Promise.all([self.registration.showNotification(title,{body:typeof data.body==='string'?data.body:'Nové upozornění v administraci.',icon:'/patrac-admin-icon-192.png',badge:'/patrac-admin-icon-192.png',tag:typeof data.tag==='string'?data.tag:'patrac-admin',data:{id:adminNoticeId(data)}}),self.clients.matchAll({type:'window',includeUncontrolled:true}).then(clients=>{for(const client of clients){const url=new URL(client.url);if(url.origin===self.location.origin&&url.pathname==='/admin')client.postMessage({type:'patrac-admin-events'});}})]));
 });
 self.addEventListener('notificationclick',event=>{
  event.notification.close();
- event.waitUntil((async()=>{const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});for(const client of windows){const url=new URL(client.url);if(url.origin===self.location.origin&&url.pathname==='/admin'){await client.focus();return;}}await self.clients.openWindow('/admin');})());
+ event.waitUntil((async()=>{const id=adminNoticeId({tag:event.notification.data?.id}),target=id?'/admin?notice='+encodeURIComponent(id):'/admin';const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});for(const client of windows){const url=new URL(client.url);if(url.origin===self.location.origin&&url.pathname==='/admin'){if(id)client.postMessage({type:'patrac-admin-notice',id});await client.focus();return;}}await self.clients.openWindow(target);})());
 });
