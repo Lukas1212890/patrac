@@ -280,3 +280,7 @@ html[data-patrac-home-locked] .p-player-travelling>.p-travel-bottom{touch-action
 html[data-patrac-zoom-locked],html[data-patrac-zoom-locked] body{touch-action:pan-x pan-y}
 @media(display-mode:standalone),(display-mode:fullscreen){html,body{touch-action:pan-x pan-y}}
 html[data-patrac-zoom-locked] [data-patrac-map-gestures]{touch-action:none}
+
+.p-draggable-marker{touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;z-index:1}
+.p-draggable-marker:active{cursor:grabbing}
+@media(pointer:coarse){.p-draggable-marker::after{content:'';position:absolute;inset:-9px;border-radius:50%}}
