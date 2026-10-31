@@ -61,3 +61,18 @@
 .pa-preview-bar button{width:auto}
 .pa-expedition-preview button:hover:not(:disabled){background:#dce6ff}
 .pa-root .pa-games button:active:not(:disabled),.pa-expedition-preview button:active:not(:disabled){transform:translateY(1px)}
+
+/* Keep admin navigation below the iOS standalone status bar. */
+.pa-header{
+ min-height:calc(88px + env(safe-area-inset-top,0px));
+ padding-top:calc(18px + env(safe-area-inset-top,0px));
+ padding-left:max(22px,calc((100vw - 1320px)/2),env(safe-area-inset-left,0px));
+ padding-right:max(22px,calc((100vw - 1320px)/2),env(safe-area-inset-right,0px));
+}
+@media(max-width:520px){
+ .pa-header{
+  padding-top:calc(16px + env(safe-area-inset-top,0px));
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+ }
+}
