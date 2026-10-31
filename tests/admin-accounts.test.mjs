@@ -157,3 +157,21 @@ test('five incorrect per-action admin passwords are rate limited without changin
  await assert.rejects(()=>f.service.change(f.admin,{action:'reset',id:'target',adminPassword:password}),e=>e.code==='ADMIN_PASSWORD_RATE_LIMIT');
  assert.equal(f.sent.length,0);f.db.close();
 });
+
+test('admin inspects complete private or public expedition without exposing credentials or changing progress',async()=>{
+ const f=await fixture(),code='ABCDEFG';
+ const game={name:'Kontrolovaná výprava',visibility:'private',ownerToken:'SECRET',finishText:'Gratulace!',stations:[{name:'První',lat:49,lng:18,radius:25,arrivalText:'Příběh',question:'Otázka?',answer:'Odpověď\nVarianta',solutionMinutes:30,hints:[{type:'text',content:'Nápověda',minutes:10},{type:'photo',content:'data:image/png;base64,YQ==',minutes:5}]}]};
+ const payload=JSON.stringify(game);
+ f.db.prepare('INSERT INTO patrac_expeditions(code,owner_hash,payload) VALUES(?,?,?)').run(code,'secret-hash',payload);
+ f.db.prepare('INSERT INTO patrac_creator_games(code,creator_id,linked_at) VALUES(?,?,?)').run(code,'target',Date.now());
+ for(const req of [new Request('http://localhost'),f.regular,f.target])await assert.rejects(()=>f.service.expedition(req,'target',code),e=>[401,403].includes(e.status));
+ await assert.rejects(()=>f.service.expedition(f.admin,'regular',code),e=>e.status===404);
+ const result=await f.service.expedition(f.admin,'target',code);
+ assert.equal(result.game.stations[0].answer,game.stations[0].answer);assert.equal(result.game.stations[0].arrivalText,'Příběh');assert.equal(result.game.finishText,'Gratulace!');assert.equal(result.game.stations[0].hints[0].content,'Nápověda');assert.equal(result.game.stations[0].hints[1].content,'');assert.ok(!JSON.stringify(result).includes('SECRET'));
+ assert.equal((await f.service.expedition(f.admin,'target',code,[0,1])).content,'data:image/png;base64,YQ==');
+ await assert.rejects(()=>f.service.expedition(f.admin,'target',code,[0,0]),e=>e.status===404);
+ assert.equal(f.db.prepare('SELECT payload FROM patrac_expeditions WHERE code=?').get(code).payload,payload);
+ game.visibility='public';game.stations[0].hints[1].photoKey='hints/ABCDEFG/photo';f.db.prepare('UPDATE patrac_expeditions SET payload=? WHERE code=?').run(JSON.stringify(game),code);
+ const service=createAdminService({db:d1(f.db),getSession:async()=>({user:{id:'admin',emailVerified:true}}),bucket:{get:async key=>{assert.equal(key,'hints/ABCDEFG/photo');return {arrayBuffer:async()=>new Uint8Array([97]).buffer,httpMetadata:{contentType:'image/png'}};}}});
+ assert.equal((await service.expedition(f.admin,'target',code)).game.visibility,'public');assert.equal((await service.expedition(f.admin,'target',code,[0,1])).content,'data:image/png;base64,YQ==');f.db.close();
+});

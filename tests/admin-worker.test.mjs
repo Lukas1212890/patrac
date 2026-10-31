@@ -43,6 +43,12 @@ test('Worker HTTP admin routes enforce origins and real session roles before exp
     await db.prepare('INSERT INTO patrac_expeditions VALUES(?,?,?,0)').bind('ABCDEFG','owner-hash',JSON.stringify({name:'Testovací výprava',visibility:'private',status:'waiting',stations:[]})).run();
     await db.prepare('INSERT INTO patrac_creator_games VALUES(?,?,?)').bind('ABCDEFG','regular',stamp).run();
     const bucket=await mf.getR2Bucket('BUCKET');await bucket.put('hints/ABCDEFG/photo','image');await bucket.put('hints/HJKLMNP/keep','image');
+    const previewPath='/api/admin/users/regular/expeditions/ABCDEFG';
+    assert.equal((await request(previewPath)).status,401);
+    assert.equal((await request(previewPath,null,regular)).status,403);
+    assert.equal((await request(previewPath,null,admin,'https://untrusted.example')).status,403);
+    const preview=await request(previewPath,null,admin);assert.equal(preview.status,200);assert.equal(preview.headers.get('cache-control'),'no-store, private');assert.equal((await preview.json()).game.name,'Testovací výprava');
+    assert.equal((await request('/api/admin/users/admin/expeditions/ABCDEFG',null,admin)).status,404);
     const deletion={action:'delete-expedition',id:'regular',code:'ABCDEFG',confirmation:'ABCDEFG',version:0,reason:'Výprava vede na uzavřený soukromý pozemek.',requestKey:crypto.randomUUID()};
     assert.equal((await request('/api/admin/users',deletion,regular)).status,403);
     assert.equal((await request('/api/admin/users',{...deletion,reason:''},admin)).status,400);

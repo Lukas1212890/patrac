@@ -119,6 +119,30 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
         FROM patrac_auth_user u ${join} ${where} ORDER BY u.createdAt DESC,u.id ASC LIMIT 20 OFFSET ?`).bind(...bindings,page*20).all();
       return {users:rows.results.map(row=>{const {expires_at,sources,paidMonths,adminMonths,rewardMonths,registrationMonths,...user}=row;return {...safeUser(user),subscription:enabled?subscriptionSummary(row,billingMode,stamp):null};}),total:count.total,page,pageSize:20,stats,billingEnvironment:enabled?billingMode:null};
     },
+    /** @param {number[] | null} photo */
+    async expedition(request,id,code,photo=null) {
+      await requireAdmin(request); await target(id);
+      if(!/^[A-Z2-9]{7}$/.test(code))throw new AdminError('Výprava nebyla nalezena.',404);
+      const row=await db.prepare(`SELECT e.payload FROM patrac_creator_games g JOIN patrac_expeditions e ON e.code=g.code WHERE g.creator_id=? AND e.code=?`).bind(id,code).first();
+      if(!row)throw new AdminError('Výprava tohoto účtu nebyla nalezena.',404);
+      const game=JSON.parse(row.payload);
+      if(photo){
+        const [si,hi]=photo;
+        if(!Number.isInteger(si)||!Number.isInteger(hi)||si<0||hi<0)throw new AdminError('Fotografie nebyla nalezena.',404);
+        const hint=game.stations?.[si]?.hints?.[hi];
+        if(hint?.type!=='photo')throw new AdminError('Fotografie nebyla nalezena.',404);
+        if(!hint.photoKey)return {content:hint.content||''};
+        if(!hint.photoKey.startsWith(`hints/${code}/`))throw new AdminError('Fotografie není dostupná.',404);
+        const object=await bucket?.get(hint.photoKey);
+        if(!object)throw new AdminError('Fotografii se nepodařilo načíst.',503);
+        const bytes=new Uint8Array(await object.arrayBuffer());let binary='';
+        for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+        const type=object.httpMetadata?.contentType||'image/jpeg';
+        if(!['image/jpeg','image/png','image/webp'].includes(type))throw new AdminError('Neplatná fotografie.',415);
+        return {content:`data:${type};base64,${btoa(binary)}`};
+      }
+      return {game:{code,name:game.name,visibility:game.visibility==='public'?'public':'private',finishText:game.finishText||'',stations:(game.stations||[]).map(s=>({name:s.name,lat:s.lat,lng:s.lng,radius:s.radius,arrivalText:s.arrivalText||'',question:s.question,answer:s.answer,solutionMinutes:s.solutionMinutes??30,hints:(s.hints||[]).map(h=>({type:h.type,minutes:h.minutes,content:h.type==='photo'?'':h.content}))}))}};
+    },
     async detail(request, id) {
       await requireAdmin(request); const user = await target(id);
       const games = await db.prepare(`SELECT e.code,e.version,json_extract(e.payload,'$.moderation.reason') AS suspensionReason,EXISTS(${activePlayersQuery('e.code')}) AS activePlayers,json_extract(e.payload,'$.name') AS name,json_extract(e.payload,'$.status') AS status,json_extract(e.payload,'$.deleteAt') AS deleteAt,json_extract(e.payload,'$.adminDeletion') AS deleteOperation,a.details AS deletionDetails
