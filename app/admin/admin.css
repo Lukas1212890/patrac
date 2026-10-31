@@ -40,3 +40,24 @@
 .pa-preview-hint{background:#f2f6ff;border-radius:10px;padding:12px;margin:10px 0}
 .pa-preview-photo{display:block;max-width:100%;height:auto;margin-top:12px;border-radius:10px}
 @media(max-width:640px){.pa-preview-backdrop{padding:0}.pa-expedition-preview{border-radius:0;padding:0 16px calc(20px + env(safe-area-inset-bottom))}.pa-preview-bar{padding-top:calc(12px + env(safe-area-inset-top))}}
+
+/* Expedition controls must remain visible and easy to tap after global resets. */
+.pa-games li>strong{font-size:15px;line-height:1.5;margin-bottom:12px}
+.pa-games li>button:not(.pa-danger),.pa-games li>div>button,.pa-preview-bar button,.pa-expedition-preview button{
+ display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:48px;
+ padding:12px 16px;border:1px solid #a8b9eb;border-radius:11px;background:#eaf0ff;color:#2348df;
+ font:inherit;font-size:14px;font-weight:700;line-height:1.5;text-align:center;white-space:normal;
+}
+.pa-games li>button:not(.pa-danger){background:#2348df;border-color:#2348df;color:#fff;margin-bottom:10px}
+.pa-games li>div>button{background:#fff1e5;border-color:#e5b184;color:#873e13}
+.pa-games li>button:not(.pa-danger):hover:not(:disabled){background:#1939b8}
+.pa-games li>div>button:hover:not(:disabled){background:#ffe3cb}
+.pa-games li>span{margin-top:12px;line-height:1.6}
+.pa-games li>.pa-danger{width:100%;min-height:48px;white-space:normal;line-height:1.5}
+.pa-games li>div>form{margin-top:12px;padding:16px;background:#fff8f1;border:1px solid #e5b184;border-radius:12px}
+.pa-games li>div>form p{margin:0;font-size:13px;line-height:1.65}
+.pa-games li>div>form .pa-primary{min-height:48px}
+.pa-games li>div .pa-alert{font-size:13px}
+.pa-preview-bar button{width:auto}
+.pa-expedition-preview button:hover:not(:disabled){background:#dce6ff}
+.pa-root .pa-games button:active:not(:disabled),.pa-expedition-preview button:active:not(:disabled){transform:translateY(1px)}
