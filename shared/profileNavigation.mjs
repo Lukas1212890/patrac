@@ -1,4 +1,4 @@
-export const PROFILE_SECTIONS=['menu','notifications','billing','details','password','info'];
+export const PROFILE_SECTIONS=['menu','notifications','billing','details','password','info','delete'];
 export function profileSectionFromURL(href){
  const url=new URL(href,'https://patrac.stopik.cz');
  if(['success','cancel'].includes(url.searchParams.get('billing')))return 'billing';

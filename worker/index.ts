@@ -1,3 +1,4 @@
+import {sweepDeletedAccounts} from './lib/accountDeletion.mjs';
 import {runAdminPush} from './lib/adminPush.mjs';
 import {sweepDeletedExpeditions} from './lib/expeditionLifecycle.mjs';
 import {expireAttempts} from './lib/expiredAttempts.mjs';
@@ -12,7 +13,7 @@ import * as account from './account';
 import * as config from './config';
 import {createCreatorRewards} from './lib/creatorRewards.mjs';
 const handler = {
-  async scheduled(){await expireAttempts(env.DB);await sweepDeletedExpeditions(env.DB,env.BUCKET);await createCreatorRewards({db:env.DB,env}).sweep();await runAdminPush(env.DB,env.PATRAC_AUTH_SECRET);},
+  async scheduled(){await expireAttempts(env.DB);await sweepDeletedExpeditions(env.DB,env.BUCKET);await sweepDeletedAccounts(env.DB);await createCreatorRewards({db:env.DB,env}).sweep();await runAdminPush(env.DB,env.PATRAC_AUTH_SECRET);},
   async fetch(request: Request): Promise<Response> {
     const origin = request.headers.get('origin');
     if (origin && !allowedOrigin(origin, env.PATRAC_ALLOWED_ORIGINS)) return Response.json({ error: 'Nepovolený původ požadavku.' }, { status: 403 });

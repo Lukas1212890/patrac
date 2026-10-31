@@ -1,3 +1,4 @@
+import {deleteOwnAccount} from './lib/accountDeletion.mjs';
 import {privatePlayHistory} from './lib/privateReplay.mjs';
 import {noticeReads,markNoticeReads} from './lib/noticeReads.mjs';
 import {billingEnvironment} from './lib/billing.mjs';
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const who = await creatorIdentity(request, true), input = await body(request);
+    if(input.action==='delete-account')return json(await deleteOwnAccount({db:env.DB,user:who!,input,verifyPassword:(password:string)=>accountAuth().api.verifyPassword({headers:new Headers({Authorization:'Bearer '+request.headers.get('x-patrac-account')}),body:{password}})}));
     if(input.action==='nickname'){
       if(input.acknowledge!==true||input.oldName!==who!.nickname)throw new GameError('Potvrďte uvolnění své současné přezdívky.',409);
       if(typeof input.password!=='string'||input.password.length>128)throw new GameError('Potvrďte přihlášení heslem.',401);

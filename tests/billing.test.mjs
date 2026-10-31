@@ -109,3 +109,11 @@ test('receipt is never sent for unpaid or mismatched server-verified payment',as
  session.payment_status='paid';session.amount_total=1;await assert.rejects(()=>api.fulfill(session.id));assert.equal(sent,0);
  session.amount_total=19900;await api.fulfill(session.id);await api.fulfill(session.id);assert.equal(sent,1);f.native.close();
 });
+
+test('a late verified payment stays recorded but cannot reactivate a deleted account or send mail',async()=>{
+ const f=fixture(),session=await purchase(f);let sent=0;
+ f.native.exec("CREATE TABLE patrac_deleted_accounts(user_id TEXT PRIMARY KEY,deleted_at INTEGER NOT NULL,billing_email TEXT)");f.native.exec("INSERT INTO patrac_deleted_accounts VALUES('user',1,'user@example.com')");
+ const api=createBilling({db:f.db,env:f.env,fetcher:async()=>Response.json(session),sendMail:async()=>{sent++;}});
+ session.payment_status='paid';session.status='complete';await api.fulfill(session.id);await api.fulfill(session.id);
+ assert.ok(f.native.prepare('SELECT paid_at FROM patrac_orders').get().paid_at);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM patrac_access').get().n,0);assert.equal(sent,0);f.native.close();
+});

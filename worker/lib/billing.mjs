@@ -1,3 +1,4 @@
+import {deletedAccount} from './accountDeletion.mjs';
 import {sendPurchaseConfirmation} from './purchaseConfirmation.mjs';
 import {validPurchaseAcceptance,recordAcceptance} from './legalAcceptance.mjs';
 import {stripeKeyMatchesMode} from './stripeKey.mjs';
@@ -86,6 +87,7 @@ export function createBilling({db,env,fetcher=fetch,now=Date.now,sendMail}) {
   if(!order)return {received:true};
   const lines=session.line_items?.data;
   if(order.environment!==environment||session.livemode!==(environment==='live')||session.mode!=='payment'||session.currency!=='czk'||session.amount_total!==order.amount||session.metadata?.patrac_order!==order.id||session.metadata?.patrac_user!==order.user_id||!Array.isArray(lines)||lines.length!==1||session.line_items.has_more||lines[0].price?.id!==order.price_id||lines[0].quantity!==1||(order.session_id&&order.session_id!==session.id))throw new GameError('Údaje platby nesouhlasí.',400);
+  if(await deletedAccount(db,order.user_id)){await db.prepare('UPDATE patrac_orders SET paid_at=COALESCE(paid_at,?),session_id=COALESCE(session_id,?),checkout_url=NULL WHERE id=?').bind(now(),session.id,order.id).run();return {received:true};}
   if(environment==='live')await carryAdminAccess(db,order.user_id);
   await db.prepare('INSERT OR IGNORE INTO patrac_access(user_id,environment) VALUES(?,?)').bind(order.user_id,environment).run();
   for(let i=0;i<8;i++){

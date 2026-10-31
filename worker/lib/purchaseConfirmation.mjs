@@ -1,3 +1,4 @@
+import {deletedAccount} from './accountDeletion.mjs';
 export async function sendPurchaseConfirmation(db,orderId,sendMail){
  if(!sendMail)return;
  // Older orders have no legal acceptance; do not send them new contractual text.
@@ -8,7 +9,7 @@ export async function sendPurchaseConfirmation(db,orderId,sendMail){
  await db.prepare('CREATE TABLE IF NOT EXISTS patrac_purchase_mail(order_id TEXT PRIMARY KEY,sent_at INTEGER NOT NULL)').run();
  if(await db.prepare('SELECT order_id FROM patrac_purchase_mail WHERE order_id=?').bind(orderId).first())return;
  const order=await db.prepare('SELECT o.*,u.email FROM patrac_orders o JOIN patrac_auth_user u ON u.id=o.user_id WHERE o.id=? AND o.paid_at IS NOT NULL').bind(orderId).first();
- if(!order)return;
+ if(!order||await deletedAccount(db,order.user_id))return;
  await sendMail(order.email,'Potvrzení platby – Pátrač',purchaseConfirmationText(order,accepted,Date.now()),{version:accepted.version,text:accepted.terms_snapshot});
  // If mail fails, webhook retries delivery without extending access a second time.
  await db.prepare('INSERT OR IGNORE INTO patrac_purchase_mail(order_id,sent_at) VALUES(?,?)').bind(orderId,Date.now()).run();

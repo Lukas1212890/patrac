@@ -73,5 +73,16 @@ test('Worker HTTP admin routes enforce origins and real session roles before exp
     const emailChange=await request('/api/admin/users',{...emailInput,adminPassword:password},admin);
     assert.equal(emailChange.status,200,await emailChange.clone().text());
     assert.equal((await request('/api/admin/users',null,regular)).status,401);
+    await db.prepare('INSERT INTO patrac_auth_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,1,?,?)').bind('delete-me','Delete Me','delete-me@example.com',stamp,stamp).run();
+    await db.prepare("INSERT INTO patrac_auth_account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES('delete-me','delete-me','credential','delete-me',?,?,?)").bind(hash,stamp,stamp).run();
+    const doomed=await login('delete-me'),secondDevice=await login('delete-me');
+    const removal={action:'delete-account',password,confirmation:'SMAZAT ÚČET',acknowledge:true,id:'admin'};
+    assert.equal((await request('/api/account',removal)).status,401);
+    assert.equal((await request('/api/account',removal,doomed,'https://untrusted.example')).status,403);
+    assert.equal((await request('/api/account',{...removal,password:'wrong'},doomed)).status,401);
+    const removed=await request('/api/account',removal,doomed);assert.equal(removed.status,200,await removed.clone().text());assert.equal((await removed.json()).deleted,true);
+    assert.equal((await request('/api/account',null,secondDevice)).status,401);
+    assert.equal(await db.prepare("SELECT id FROM patrac_auth_user WHERE id='delete-me'").first(),null);
+    assert.ok(await db.prepare("SELECT id FROM patrac_auth_user WHERE id='admin'").first());
   }finally{await mf.dispose();}
 });

@@ -1,3 +1,4 @@
+import {deletionReady} from './accountDeletion.mjs';
 import {moderateExpedition} from './contentModeration.mjs';
 import {requireAdminPassword} from './adminPassword.mjs';
 import {previewAccessRevocation,revokeAdminAccess} from './accessRevocation.mjs';
@@ -23,11 +24,12 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
     catch { throw new AdminError('Administrace zatím není nastavená.', 503, 'ADMIN_NOT_CONFIGURED'); }
     if (!role) throw new AdminError('Tento účet nemá oprávnění správce.', 403, 'ADMIN_FORBIDDEN');
     if (write && (!Number.isFinite(new Date(session.session.createdAt).getTime()) || now() - new Date(session.session.createdAt).getTime() > FRESH_MS)) throw new AdminError('Pro tuto změnu znovu potvrďte své heslo.', 428, 'ADMIN_REAUTH_REQUIRED');
+    await deletionReady(db);
     return session.user;
   }
   async function target(id) {
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new AdminError('Neplatný účet.');
-    const user = await db.prepare(`SELECT ${FIELDS} FROM patrac_auth_user WHERE id = ?`).bind(id).first();
+    const user = await db.prepare(`SELECT ${FIELDS} FROM patrac_auth_user WHERE id = ? AND NOT EXISTS(SELECT 1 FROM patrac_deleted_accounts d WHERE d.user_id=patrac_auth_user.id)`).bind(id).first();
     if (!user) throw new AdminError('Účet nebyl nalezen.', 404);
     return user;
   }
@@ -99,7 +101,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       if(!enabled&&(status!=='all'||source!=='all'||months!=='all'||ending!=='all'))throw new AdminError('Správa přístupu není zapnutá.');
       const prefix=enabled?await subscriptionQuery(db,billingMode,stamp):{sql:'',bindings:[]};
       const join=enabled?'LEFT JOIN access_rows a ON a.user_id=u.id LEFT JOIN source_summary s ON s.userId=u.id':'';
-      const filters=["(u.email LIKE ? ESCAPE '\\' OR u.name LIKE ? ESCAPE '\\')"],values=[pattern,pattern];
+      const filters=["NOT EXISTS(SELECT 1 FROM patrac_deleted_accounts d WHERE d.user_id=u.id)","(u.email LIKE ? ESCAPE '\\' OR u.name LIKE ? ESCAPE '\\')"],values=[pattern,pattern];
       if(status==='active'){filters.push('COALESCE(a.expires_at,0)>?');values.push(stamp);}
       if(status==='expired'){filters.push('a.expires_at>0 AND a.expires_at<=?');values.push(stamp);}
       if(status==='none')filters.push('COALESCE(a.expires_at,0)=0');
@@ -112,7 +114,7 @@ export function createAdminService({ db, bucket, getSession, sendReset, sendVeri
       if(ending!=='all'){filters.push('a.expires_at>? AND a.expires_at<=?');values.push(stamp,stamp+Number(ending)*86400000);}
       const where='WHERE '+filters.join(' AND '),bindings=[...prefix.bindings,...values];
       const count=await db.prepare(prefix.sql+`SELECT COUNT(*) AS total FROM patrac_auth_user u ${join} ${where}`).bind(...bindings).first();
-      const stats=await db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(emailVerified),0) AS verified FROM patrac_auth_user').first();
+      const stats=await db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(emailVerified),0) AS verified FROM patrac_auth_user WHERE NOT EXISTS(SELECT 1 FROM patrac_deleted_accounts d WHERE d.user_id=patrac_auth_user.id)').first();
       const rows=await db.prepare(prefix.sql+`SELECT u.id,u.name,u.email,u.emailVerified,u.createdAt,u.updatedAt,
         (SELECT COUNT(*) FROM patrac_creator_games g WHERE g.creator_id=u.id) AS games
         ${enabled?',a.expires_at,s.sources,s.paidMonths,s.adminMonths,s.rewardMonths,s.registrationMonths':''}

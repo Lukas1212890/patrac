@@ -11,7 +11,7 @@ export function createCreatorRewards({db,env,now=Date.now}){
  async function rewardExpedition(code){
   if(!await creatorRewardsReady(db))return{ready:false,granted:0};
   const game=await db.prepare(`SELECT c.creator_id AS userId,json_extract(e.payload,'$.name') AS name
-   FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code
+   FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code JOIN patrac_auth_user creator ON creator.id=c.creator_id AND creator.emailVerified=1
    WHERE e.code=? AND json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.status')='running'`).bind(code).first();
   if(!game)return{ready:true,granted:0};
   const completed=await db.prepare(COUNT).bind(code,environment,game.userId).first();
@@ -28,7 +28,7 @@ export function createCreatorRewards({db,env,now=Date.now}){
     const result=await db.batch([
      db.prepare(`INSERT OR IGNORE INTO patrac_creator_rewards(code,user_id,environment,milestone,expedition_name,months,granted_at,access_until,activation_id)
       SELECT ?,?,?,?,?,2,?,?,? WHERE EXISTS(SELECT 1 FROM patrac_access WHERE user_id=? AND environment=? AND version=?)
-      AND EXISTS(SELECT 1 FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE e.code=? AND c.creator_id=? AND json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.status')='running')
+      AND EXISTS(SELECT 1 FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code JOIN patrac_auth_user creator ON creator.id=c.creator_id AND creator.emailVerified=1 WHERE e.code=? AND c.creator_id=? AND json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.status')='running')
       AND (${COUNT})>=?`)
       .bind(code,game.userId,environment,milestone,game.name,stamp,until,activation,game.userId,environment,current.version,code,game.userId,code,environment,game.userId,milestone),
      db.prepare(`UPDATE patrac_access SET expires_at=?,version=version+1 WHERE user_id=? AND environment=? AND version=?
@@ -44,7 +44,7 @@ export function createCreatorRewards({db,env,now=Date.now}){
  }
  async function sweep(){
   if(!await creatorRewardsReady(db))return{ready:false,checked:0};
-  const rows=await db.prepare(`SELECT e.code FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code
+  const rows=await db.prepare(`SELECT e.code FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code JOIN patrac_auth_user creator ON creator.id=c.creator_id AND creator.emailVerified=1
    JOIN patrac_public_attempts a ON a.code=e.code AND a.environment=? AND a.user_id<>c.creator_id
    JOIN patrac_teams t ON t.id=a.team_id
    WHERE json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.status')='running'
@@ -60,7 +60,7 @@ export function createCreatorRewards({db,env,now=Date.now}){
   const rows=await db.prepare(`SELECT e.code,json_extract(e.payload,'$.name') AS name,
    (${COUNT.replace('a.code=?','a.code=e.code')}) AS completed,
    COALESCE((SELECT MAX(milestone) FROM patrac_creator_rewards r WHERE r.code=e.code AND r.environment=?),0) AS awarded
-   FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code WHERE c.creator_id=? AND json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.status')<>'deleting'`).bind(environment,userId,environment,userId).all();
+   FROM patrac_expeditions e JOIN patrac_creator_games c ON c.code=e.code JOIN patrac_auth_user creator ON creator.id=c.creator_id AND creator.emailVerified=1 WHERE c.creator_id=? AND json_extract(e.payload,'$.visibility')='public' AND json_extract(e.payload,'$.status')<>'deleting'`).bind(environment,userId,environment,userId).all();
   // Use the per-expedition code in the correlated counter, rather than a client-supplied identifier.
   const history=await db.prepare('SELECT code,expedition_name AS name,milestone,months,granted_at AS grantedAt,access_until AS accessUntil FROM patrac_creator_rewards WHERE user_id=? AND environment=? ORDER BY granted_at DESC,code,milestone DESC LIMIT 20').bind(userId,environment).all();
   const total=await db.prepare('SELECT COALESCE(SUM(months),0) AS months FROM patrac_creator_rewards WHERE user_id=? AND environment=?').bind(userId,environment).first();

@@ -3,7 +3,7 @@ import {ensureNoticeReads} from './noticeReads.mjs';
 import {GameError} from './patrac-engine.mjs';
 const eventKind="(e.id LIKE 'registration:%' OR e.id LIKE 'payment:%')";
 const fields=`SELECT e.id,e.created_at AS createdAt,e.payload,r.read_at AS readAt,
- COALESCE(reg.id,payer.id) AS userId,COALESCE(reg.name,payer.name) AS nickname,COALESCE(reg.email,payer.email) AS email,
+ CASE WHEN COALESCE(reg.email,payer.email) LIKE '%@account.invalid' THEN NULL ELSE COALESCE(reg.id,payer.id) END AS userId,CASE WHEN COALESCE(reg.email,payer.email) LIKE '%@account.invalid' THEN 'Smazaný účet' ELSE COALESCE(reg.name,payer.name) END AS nickname,CASE WHEN COALESCE(reg.email,payer.email) LIKE '%@account.invalid' THEN NULL ELSE COALESCE(reg.email,payer.email) END AS email,
  o.id AS orderId,o.months,o.amount,o.environment,o.paid_at AS paidAt,o.access_until AS accessUntil
  FROM patrac_push_events e
  LEFT JOIN patrac_auth_user reg ON e.id='registration:'||reg.id

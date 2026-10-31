@@ -47,3 +47,8 @@ test('expired access restarts on award date and a missing migration leaves gamep
  const f=fixture();f.game('ABCDEFG');f.players('ABCDEFG',100);f.native.prepare("INSERT INTO patrac_access VALUES('author','test',?,0)").run(f.now()-86400000);await f.api.rewardExpedition('ABCDEFG');assert.equal(f.access().expires_at,addMonths(f.now(),2));
  f.native.exec('DROP TABLE patrac_creator_rewards');assert.equal((await f.api.rewardExpedition('ABCDEFG')).ready,false);assert.equal((await f.api.summary('author')).ready,false);assert.equal((await f.api.sweep()).ready,false);f.native.close();
 });
+
+test('deleted and unverified creators cannot receive or recover rewards',async()=>{
+ const f=fixture();f.game('ABCDEFG');f.players('ABCDEFG',100);f.native.exec("UPDATE patrac_auth_user SET emailVerified=0 WHERE id='author'");
+ assert.equal((await f.api.rewardExpedition('ABCDEFG')).granted,0);assert.equal((await f.api.sweep()).checked,0);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM patrac_creator_rewards').get().n,0);f.native.close();
+});
