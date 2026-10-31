@@ -14,7 +14,7 @@ export function creatorClient() {
       credentials: 'omit', auth: { type: 'Bearer', token: storedToken },
       onSuccess: ({ response }) => { const token = response.headers.get('set-auth-token'); if (token && token !== storedToken()) { localStorage.setItem(STORAGE, token); notifyAccount(); } },
     } });
-    return { client, registrationReady: config.registrationReady, registrationBonusMonths: config.registrationBonusMonths||0 };
+    return { client, turnstile:config.turnstile, registrationReady: config.registrationReady, registrationBonusMonths: config.registrationBonusMonths||0 };
   }).catch(error => { pending = undefined; throw error; });
   return pending;
 }

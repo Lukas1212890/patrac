@@ -1,3 +1,4 @@
+import {checkTurnstile} from './lib/turnstile.mjs';
 import {sweepDeletedAccounts} from './lib/accountDeletion.mjs';
 import {runAdminPush} from './lib/adminPush.mjs';
 import {sweepDeletedExpeditions} from './lib/expeditionLifecycle.mjs';
@@ -20,7 +21,7 @@ const handler = {
     const headers = new Headers({ 'Cache-Control': 'no-store, private', 'Vary': 'Origin, Authorization, X-Patrac-Account', 'X-Content-Type-Options': 'nosniff' });
     if (origin) headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Patrac-Account');
+    headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Patrac-Account, X-Patrac-Turnstile');
     headers.set('Access-Control-Expose-Headers', 'set-auth-token');
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     const path = new URL(request.url).pathname;
@@ -40,6 +41,7 @@ const handler = {
           const input:any=await request.clone().json();
           if('name' in input||'nicknameKey' in input)return Response.json({message:'Přezdívku změňte v profilu po potvrzení hesla.',code:'NICKNAME_CONFIRM_REQUIRED'},{status:403,headers});
         }
+        await checkTurnstile(request,env);
         response = await accountAuth().handler(request);
       }
       else if (path === '/api/account/config' && request.method === 'GET') response = await config.GET();
