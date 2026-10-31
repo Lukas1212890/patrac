@@ -29,7 +29,7 @@ test('Worker encrypts real Web Push messages, queues committed events once, sepa
  await api({action:'capture'});await api({action:'capture'});assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM patrac_push_deliveries').first()).n,3);
  const sent=await api({action:'send',now:stamp+100});assert.equal(sent.length,3);
  const payloads=sent.map(s=>{assert.equal(s.headers['content-encoding'],'aes128gcm');assert.match(s.headers.authorization,/vapid/);return JSON.parse(ece.decrypt(Buffer.from(s.body,'base64'),{version:'aes128gcm',privateKey:client,authSecret:auth}).toString());});
- assert.equal(payloads.find(p=>p.tag==='registration:player').title,'Nový hráč v Pátrači');assert.match(payloads.find(p=>p.tag==='payment:paid').title,/TESTOVACÍ/);assert.equal(JSON.stringify(payloads).includes('private-email'),false);assert.equal(payloads.find(p=>p.tag==='payment:livepaid').title,'Nová platba – Pátrač');
+ assert.equal(payloads.find(p=>p.tag==='registration:player').title,'Nový účet: Nový hráč');assert.match(payloads.find(p=>p.tag==='payment:paid').title,/TESTOVACÍ/);assert.equal(JSON.stringify(payloads).includes('private-email'),false);assert.equal(payloads.find(p=>p.tag==='payment:livepaid').title,'Nová platba – Pátrač');
  assert.equal((await api({action:'send',now:stamp+200})).length,0);
  await db.prepare("INSERT INTO patrac_push_events VALUES('retry',?,?)").bind(JSON.stringify({title:'Retry',body:'retry',tag:'retry'}),stamp).run();
  await db.prepare("INSERT INTO patrac_push_deliveries(event_id,subscription_id) SELECT 'retry',id FROM patrac_admin_push").run();

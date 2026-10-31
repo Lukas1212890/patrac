@@ -12,3 +12,5 @@ test('push opens events and leaving that section clears the event link',()=>{
  assert.equal(adminNavigationURL('menu','https://patrac.stopik.cz'+url),'/admin');
  assert.equal(readAdminNavigation('/admin?notice=https://example.com#players').section,'players');
 });
+
+test('registration push opens accounts and retains a validated new user identifier',()=>{assert.deepEqual(readAdminNavigation('/admin?notice=registration%3Anew_user'),{section:'players',notice:'registration:new_user'});assert.equal(readAdminNavigation('/admin?notice=registration%3A..%2Fbad').section,'menu');});

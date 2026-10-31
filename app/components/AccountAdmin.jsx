@@ -45,8 +45,8 @@ export default function AccountAdmin() {
     if(focus)requestAnimationFrame(()=>{heading.current?.focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});});
   }
   useEffect(()=>{
-    const restore=()=>{const route=readAdminNavigation(location.href);setSection(route.section);setRouteNotice(route.notice);};restore();
-    const message=e=>{if(e.data?.type==='patrac-admin-notice'&&/^(registration|payment):[A-Za-z0-9_-]{1,128}$/.test(e.data.id))goSection('events',e.data.id);};
+    const restore=()=>{const route=readAdminNavigation(location.href);setSection(route.section);setRouteNotice(route.notice);if(route.notice?.startsWith('registration:')){setSelected(route.notice.slice(13));setMobileDetail(true);setError('');setMessage('');}};restore();
+    const message=e=>{if(e.data?.type==='patrac-admin-notice'&&/^(registration|payment):[A-Za-z0-9_-]{1,128}$/.test(e.data.id)){if(e.data.id.startsWith('registration:')){history.pushState(null,'','/admin?notice='+encodeURIComponent(e.data.id)+'#players');restore();window.scrollTo({top:0,behavior:'instant'});}else goSection('events',e.data.id);}};
     window.addEventListener('popstate',restore);window.addEventListener('hashchange',restore);navigator.serviceWorker?.addEventListener('message',message);
     return()=>{window.removeEventListener('popstate',restore);window.removeEventListener('hashchange',restore);navigator.serviceWorker?.removeEventListener('message',message);};
   },[]);
@@ -60,6 +60,7 @@ export default function AccountAdmin() {
   },[mode,section,reload]);
   const [mobileDetail,setMobileDetail]=useState(false);
   const detailPanel=useRef(null),selectedRow=useRef(null);
+  useEffect(()=>{if(mode!=='ready'||!routeNotice?.startsWith('registration:'))return;api('/notices',{action:'read',id:routeNotice}).catch(()=>{});},[mode,routeNotice]);
   function openAccount(id){goSection('players',undefined,false);selectedRow.current=document.activeElement;if(id!==selected)setDetail(null);setSelected(id);setMobileDetail(true);setError('');setMessage('');}
   function backToAccounts(){setMobileDetail(false);requestAnimationFrame(()=>{const target=selectedRow.current?.isConnected?selectedRow.current:usersPanel.current;target?.focus({preventScroll:true});target?.scrollIntoView({block:'start'});});}
   useEffect(()=>{if(mobileDetail&&section==='players'){detailPanel.current?.focus({preventScroll:true});detailPanel.current?.scrollIntoView({block:'start'});}},[mobileDetail,selected,section]);
