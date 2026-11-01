@@ -3,7 +3,7 @@ import { GameError } from './patrac-engine.mjs';
 import {limitsReady,limitSQL} from './creatorLimits.mjs';
 export const DELETION_DELAY_MS=72*60*60*1000;
 export const EXPEDITION_LIMIT=3;
-export const PUBLIC_EXPEDITION_LIMIT=2;
+export const PUBLIC_EXPEDITION_LIMIT=10;
 export const expeditionCountSQL="SELECT COUNT(*) AS total FROM patrac_creator_games c JOIN patrac_expeditions e ON e.code=c.code WHERE c.creator_id=? AND COALESCE(json_extract(e.payload,'$.visibility'),'private')='private'";
 export const publicExpeditionCountSQL=expeditionCountSQL.replace("='private'","='public'");
 export async function expeditionCount(db,userId,visibility='private'){return (await db.prepare(visibility==='public'?publicExpeditionCountSQL:expeditionCountSQL).bind(userId).first()).total;}

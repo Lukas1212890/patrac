@@ -1,12 +1,12 @@
 export async function limitsReady(db){return !!await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='patrac_creator_limits'").first();}
 export function limitSQL(visibility='private'){
- const column=visibility==='public'?'public_limit':'private_limit',fallback=visibility==='public'?2:3;
+ const column=visibility==='public'?'public_limit':'private_limit',fallback=visibility==='public'?10:3;
  return `COALESCE((SELECT ${column} FROM patrac_creator_limits WHERE user_id=?),${fallback})`;
 }
 export async function creatorLimits(db,userId){
- if(!await limitsReady(db))return{ready:false,private:3,public:2,version:0};
+ if(!await limitsReady(db))return{ready:false,private:3,public:10,version:0};
  const row=await db.prepare('SELECT private_limit,public_limit,version FROM patrac_creator_limits WHERE user_id=?').bind(userId).first();
- return{ready:true,private:row?.private_limit??3,public:row?.public_limit??2,version:row?.version??0};
+ return{ready:true,private:row?.private_limit??3,public:row?.public_limit??10,version:row?.version??0};
 }
 export async function changeCreatorLimits({db,actor,user,input,now,ErrorType}){
  if(!await limitsReady(db))throw new ErrorType('Individuální limity čekají na aktivaci databáze.',503);
@@ -17,7 +17,7 @@ export async function changeCreatorLimits({db,actor,user,input,now,ErrorType}){
  const id='limits_'+input.requestKey;
  async function repeated(){const row=await db.prepare('SELECT * FROM patrac_admin_audit WHERE id=?').bind(id).first();if(!row)return null;const data=JSON.parse(row.details);if(row.actor_id!==actor.id||row.target_id!==user.id||row.action!=='limits'||row.status!=='success'||data.privateLimit!==input.privateLimit||data.publicLimit!==input.publicLimit||data.reason!==reason)throw new ErrorType('Identifikátor změny byl již použit.',409,'ADMIN_CONFLICT');return{ok:true,message:'Tyto limity už byly uloženy.'};}
  const old=await repeated();if(old)return old;
- await db.prepare('INSERT OR IGNORE INTO patrac_creator_limits(user_id,updated_at) VALUES(?,?)').bind(user.id,now()).run();
+ await db.prepare('INSERT OR IGNORE INTO patrac_creator_limits(user_id,public_limit,updated_at) VALUES(?,10,?)').bind(user.id,now()).run();
  const current=await creatorLimits(db,user.id);if(current.version!==input.version)throw new ErrorType('Limity mezitím změnil jiný správce. Obnovte detail účtu.',409,'ADMIN_CONFLICT');
  const stamp=now(),details=JSON.stringify({oldPrivateLimit:current.private,oldPublicLimit:current.public,privateLimit:input.privateLimit,publicLimit:input.publicLimit,reason,operation:crypto.randomUUID()});
  const result=await db.batch([

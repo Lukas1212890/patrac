@@ -139,7 +139,7 @@ export default function PatracApp() {
     setBusy(true); setError('');
     try {
       const profile = await creatorRequest(); setAccountGames(profile.games);
-      const limit=visibility==='public'?(profile.publicExpeditionLimit??2):(profile.expeditionLimit??3);
+      const limit=visibility==='public'?(profile.publicExpeditionLimit??10):(profile.expeditionLimit??3);
       if ((visibility==='public'?profile.publicExpeditionCount:profile.expeditionCount) >= limit) { setView('creator'); setError(limit===0?'Tvorba nových výprav tohoto typu je pro váš účet vypnutá.':'Dosáhli jste limitu ('+limit+') pro '+(visibility==='public'?'veřejné':'soukromé')+' výpravy. Pro další některou z této skupiny smažte.'); return; }
       const token = await creatorAccessToken();
       const response = await fetch(apiUrl('/api/billing'), { cache: 'no-store', headers: { 'X-Patrac-Account': token || '' }, signal: AbortSignal.timeout(15000) });

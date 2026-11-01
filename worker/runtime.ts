@@ -1,3 +1,4 @@
+import {upgradePublicLimits} from './lib/publicLimitUpgrade.mjs';
 import {env as bindings} from 'cloudflare:workers';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {modeEnv,readRuntimeMode} from './lib/runtimeMode.mjs';
